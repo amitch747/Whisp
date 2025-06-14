@@ -30,11 +30,12 @@ void *get_in_addr(struct sockaddr *sa)
 
 
 
+
 void* clientHandler(void* sock) {
     int cfd = *(int*)sock;
     free(sock);
 
-    printf("Hello from thread %i\n",cfd);
+    printf("Connection on thread %i\n",cfd);
 
     char buffer[1024];
     int bytes = recv(cfd, buffer, sizeof(buffer)-1, 0);
@@ -45,10 +46,12 @@ void* clientHandler(void* sock) {
         send(cfd, msg, strlen(msg), 0);    
     }
     
-
+    
     close(cfd);
     return NULL;
 }
+
+
 
 
 
@@ -66,7 +69,7 @@ int main(void)
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE;
+    hints.ai_flags = AI_PASSIVE; // What is this for again?
 
     // Get local machine address info
     if((gaiRet = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0 ) {
