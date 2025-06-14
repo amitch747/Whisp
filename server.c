@@ -72,7 +72,7 @@ int main(void)
     hints.ai_flags = AI_PASSIVE; // What is this for again?
 
     // Get local machine address info
-    if((gaiRet = getaddrinfo(NULL, PORT, &hints, &servinfo)) != 0 ) {
+    if((gaiRet = getaddrinfo("127.0.0.1", PORT, &hints, &servinfo)) != 0 ) {
         fprintf(stderr, "server: getaddrinfo: %s\n", gai_strerror(gaiRet));
         return 1;
     }
