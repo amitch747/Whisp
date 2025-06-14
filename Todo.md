@@ -1,8 +1,11 @@
 # TODO
 - ~~Setup Tor, seems easy~~
-- Simple client file, build with tor. Should be able to send the file to ANY computer, run it, and see the server response message.
-- Diffie-Hellman Key Exchange for client to client messages
-- I think it should be a very very simple ui. Keep messages on screen for few seconds, then blow away.
+- ~~Simple client file, build with tor. Should be able to send the file to ANY computer, run it, and see the server response message~~
+- Session creation. User creates session, gets sessionid, shares it, chats with other user.
+
+
+- Message encryption
+- Simple ui. Keep messages on screen for few seconds, then blow away.
 
 
 
@@ -13,8 +16,7 @@
 - Encapsulation protocol - Keep it similar to beej's example
 
 
-- I think relay server is the way to go
-- A message can be broadcast or direct
-- Broadcasts messages go into global chat. Users can set a global chat filter (using the key of the client who sent the message) to decrypt it. Other users will see nonsense.
-- Direct messsages must specify the recipient id. Shows up directy on sub panel for recipient.
+
+- https://community.torproject.org/onion-services/setup/
+- Seems easy. Install tor, add a couple lines to the torrc file.
 

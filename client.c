@@ -169,6 +169,7 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
 
 
 
+
 int main(void) 
 {
     // Connect to server, get back a message
@@ -212,6 +213,9 @@ int main(void)
         break;
     }
 
+
+
+
     if (p == NULL) {
         fprintf(stderr, "client: failed to connect\n");
         return 2;
@@ -221,23 +225,6 @@ int main(void)
     printf("Client connected to %s\n", s);
 
     freeaddrinfo(servinfo); // drop the linked list, we have a connection
-
-    char *msg = "Hello server";
-    send(sockfd, msg, strlen(msg), 0);  
-
-
-    if ((numbytes = recv(sockfd, buf, MAXBYTES-1, 0)) == -1) {
-        perror("recv");
-        exit(1);
-    }
-    buf[numbytes] = '\0';
-
-    printf("client received '%s'\n", buf);
-
-    close(sockfd);
-
-
-    return 0;
 
     /*
         Display options:
@@ -251,9 +238,48 @@ int main(void)
     // JOIN
 
     // QUIT
+    printf("WELCOME TO WHISP\n");
+
+    int choice;
+    while(choice != 3){
+        printf("1. Host Session\n");
+        printf("2. Join Session\n");
+        printf("3. Quit\n");
+        printf("Enter choice: ");
+        scanf("%d", &choice);
+
+
+        switch(choice){
+            case 1: {
+                send(sockfd, &choice, 1, 0);
+                break;
+            } 
+            case 2: {
+                send(sockfd, &choice, 1, 0);  
+                break;
+            }
+            case 3:{
+                send(sockfd, &choice, 1, 0);  
+                break;
+            } 
+        }
+
+
+        if ((numbytes = recv(sockfd, buf, MAXBYTES-1, 0)) == -1) {
+            perror("recv");
+            exit(1);
+        }
+        buf[numbytes] = '\0';
+        printf("%s'\n", buf);
+
+    }
 
 
 
 
+
+    // Client closes app
+    close(sockfd);
+    return 0;
 }
 

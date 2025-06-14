@@ -17,6 +17,7 @@
 
 #define PORT "8888" // localhost port
 #define BACKLOG 10 // pending connections for listen queue
+#define MAXSESSIONS 10
 
 
 // get sockaddr, v4/v6 - Taken from Beej
@@ -36,15 +37,43 @@ void* clientHandler(void* sock) {
     free(sock);
 
     printf("Connection on thread %i\n",cfd);
+    // Get Option
+    int option = 0;
+    while(option != 3){
+        int optionByte = recv(cfd, &option, 1, 0);
+        if (optionByte > 0) {
+            printf("Client %d sent option %d\n", cfd, option);
+        }
+        char *hosting = "Hosting new session!";
+        char *joining = "Joining";
+        char *quiting = "Quiting Whisp";
 
-    char buffer[1024];
-    int bytes = recv(cfd, buffer, sizeof(buffer)-1, 0);
-    if (bytes > 0) {
-        buffer[bytes] = '\0';
-        printf("Thread %d received: %s\n", cfd, buffer);
-        char *msg = "Thx for the message bozo";
-        send(cfd, msg, strlen(msg), 0);    
+        switch(option){
+            case 1: {
+                send(cfd, hosting, strlen(hosting), 0); 
+                break;
+            }
+            case 2: {
+                send(cfd, joining, strlen(joining), 0);  
+                break;
+            }
+            case 3: {
+                send(cfd,quiting, strlen(quiting), 0);  
+                break;
+            }
+        }
     }
+
+
+
+    // char buffer[1024];
+    // int bytes = recv(cfd, buffer, sizeof(buffer)-1, 0);
+    // if (bytes > 0) {
+    //     buffer[bytes] = '\0';
+    //     printf("Thread %d received: %s\n", cfd, buffer);
+    //     char *msg = "Thx for the message bozo";
+    //     send(cfd, msg, strlen(msg), 0);    
+    // }
     
     
     close(cfd);
@@ -52,11 +81,10 @@ void* clientHandler(void* sock) {
 }
 
 
-
-
-
 int main(void)
 {
+    Session currentSessions[MAXSESSIONS];
+
     int sockfd, newClient;
     struct addrinfo hints, *servinfo, *p;
     struct sockaddr_storage client_addr;

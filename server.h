@@ -1,6 +1,9 @@
-struct session {
-    char key[256];
-    char * name;
-    int sfdArray[10];
+#include <time.h>
+
+
+typedef struct {
+    int sessionId;
+    int sfdArray[4];
     int clientCount;
-};
+    time_t createdTime;
+} Session;
