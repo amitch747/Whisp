@@ -177,44 +177,45 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
 
 
 ClientState handleMenu(int sockfd){
-    
     int choice = 0;
-    while(choice != 3){
-        printf("1. Host Session\n");
-        printf("2. Join Session\n");
-        printf("3. Quit\n");
-        printf("Enter choice: ");
-        scanf("%d", &choice);
-        
-        // Clean stdin
-        int c;
-        while ((c = getchar()) != '\n' && c != EOF);
+    char line[MAXBYTES];
 
-        switch(choice) {
-            // int optionByte = recv(cfd, &option, 1, 0);
-            case 1: 
-                // HOST
-                send(sockfd, &choice, 1, 0);
-                return STATE_HOSTING;
-                break;
-             
-            case 2: 
-                // JOIN
-                printf("Join selected");
-                send(sockfd, &choice, 1, 0);
-                return STATE_JOINING;
-                break;
-            
-            case 3:
-                // QUIT
-                send(sockfd, &choice, 1, 0);  
-                return STATE_QUIT;
-                break;
-             
-            default:
-                printf("Invalid option\n");
-                return STATE_MENU;
+    while(choice != 3){
+        printf("1. Host Session\n2. Join Session\n3. Quit\nEnter choice: ");
+        
+        if (fgets(line, sizeof(line), stdin) != NULL) {
+            choice = atoi(line);
+            memset(line, 0, sizeof(line));
+            switch(choice) {
+                // int optionByte = recv(cfd, &option, 1, 0);
+                case 1: 
+                    // HOST
+                    send(sockfd, &choice, 1, 0);
+                    return STATE_HOSTING;
+                    break;
+                 
+                case 2: 
+                    // JOIN
+                    printf("Join selected");
+                    send(sockfd, &choice, 1, 0);
+                    return STATE_JOINING;
+                    break;
+                
+                case 3:
+                    // QUIT
+                    send(sockfd, &choice, 1, 0);  
+                    return STATE_QUIT;
+                    break;
+                 
+                default:
+                    printf("Invalid option\n");
+                    return STATE_MENU;
+            }
+
+
         }
+
+       
     }
     return STATE_QUIT;
 }
@@ -251,7 +252,6 @@ void chatLoop(int sockfd) {
         }
 
         if (pfds[0].revents & POLLIN) {
-            printf("Pollin\n");
             // Message (maybe)
             memset(networkBuf, 0, sizeof(networkBuf)); 
 
@@ -260,13 +260,12 @@ void chatLoop(int sockfd) {
                 printf("Empty message\n");
             }
             else {
-                printf("%s", networkBuf);
+                printf("???: %s\n", networkBuf);
             }
 
         }
         
         if (pfds[1].revents & POLLIN) {
-            printf("Keyboard\n");
             // Client keyboard
             char input[256];
             if (fgets(input, sizeof(input), stdin) != NULL) {
@@ -275,6 +274,7 @@ void chatLoop(int sockfd) {
                 // Replace the newline character
                 input[strcspn(input, "\n")] = '\0';
 
+                printf("CLIENT DEBUG: About to send '%s' (length %zu)\n", input, strlen(input));
 
                 // Send message
                 send(sockfd, input, strlen(input) + 1, 0); // Including null here
@@ -304,26 +304,31 @@ ClientState handleHost(int sockfd) {
 ClientState handleJoin(int sockfd) {
     printf("Handling join\n");
     // Client sends sessionID to server whom is waiting
-    int32_t sessionID;
+    char line[MAXBYTES];
     printf("Provide sessionID: ");
-    scanf("%d", &sessionID);
-    int32_t netSessionID = htonl(sessionID);  // Convert to network order
-    send(sockfd, &netSessionID, sizeof(int32_t), 0);
-    // Get response from server, verify
-    printf("Waiting for server confirmation...\n");
-
-    int confirm;
-    recv(sockfd, &confirm, sizeof(int), 0);
-    if (confirm == 1) {
-        // Joined session
-        // Chat Loop
-        chatLoop(sockfd);
+    if (fgets(line, sizeof(line), stdin) != NULL) {
+        int32_t sessionID = atoi(line);
+        int32_t netSessionID = htonl(sessionID);  // Convert to network order
+        send(sockfd, &netSessionID, sizeof(int32_t), 0);
+        // Get response from server, verify
+        printf("Waiting for server confirmation...\n");
+    
+        int confirm;
+        recv(sockfd, &confirm, sizeof(int), 0);
+        if (confirm == 1) {
+            // Joined session
+            // Chat Loop
+            chatLoop(sockfd);
+        }
+        else if (confirm == 2) {
+            // Session full
+            printf("Session is full try again later\n");
+        }
+    
+    } else {
+        printf("Invalid sessionID");
     }
-    else if (confirm == 2) {
-        // Session full
-        printf("Session is full try again later\n");
-    }
-
+   
     return STATE_MENU;
 }
 

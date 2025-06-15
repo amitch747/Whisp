@@ -78,48 +78,52 @@ void chatRelay(int cfd, Session* session)
     }
 
 
-    for (;;) {
-        int clientCount = session->clientCount;
-        struct pollfd sessionPFDS[MAXCLIENTS];
-        memcpy(sessionPFDS, session->sessionPFDS, sizeof(sessionPFDS));
+    struct pollfd mySocket;
+    mySocket.fd = cfd;
+    mySocket.events = POLLIN;
 
-        printf("Server chatRelay loop for thread %d\n",cfd);
-        int pollCount = poll(sessionPFDS, clientCount, -1); // Block until data in a socket
-    
+
+    for (;;) {
+       // int clientCount = session->clientCount;
+       // struct pollfd sessionPFDS[MAXCLIENTS];
+
+        printf("Relay loop for thread %d\n",cfd);
+        //int pollCount = poll(sessionPFDS, clientCount, -1); // Block until data in a socket
+        int pollCount = poll(&mySocket, 1, -1);
+
         if (pollCount == -1) {
             perror("poll");
             exit(1);
         }
 
         // Handle personal cfd, also check for input from others, if recived send to cfd client
-        if (sessionPFDS[cfdIndex].revents & POLLHUP) {
-            // Hangup, shut it down
-            printf("Hangup signal from client! Returning to menu\n");
+        if (mySocket.revents & POLLHUP) {
+            printf("Client %d hung up\n", cfd);
             break;
         }
 
-        if (sessionPFDS[cfdIndex].revents & POLLIN) {
-            printf("cfd sent a message\n");
-            // Message (maybe)
+        if (mySocket.revents & POLLIN) {
+            printf("Relaying message for client %d\n",cfd);
+
             memset(networkBuf, 0, sizeof(networkBuf)); 
-            // ATM networkbuf data is not decrypted. Later it will be so server cannot see it at all
             int numbytes = recv(cfd, &networkBuf, sizeof(networkBuf), 0);
             if (numbytes <= 0) {
-                printf("Empty message\n");
+                printf("Client %d disconnected\n", cfd);
+                break;
             }
-            else {
-                printf("Client message: %s\n",networkBuf);
 
-                if (strcmp(networkBuf, "EXIT") == 0) break;
-                else {
-                    // Relay message to others
-                    for (int i = 0; i < clientCount; i++) {
-                        if (sessionPFDS[i].fd != cfd) {
-                            send(sessionPFDS[i].fd, networkBuf, sizeof(networkBuf), 0);
-                        }
+            printf("Client message: %s\n",networkBuf);
+
+            if (strcmp(networkBuf, "EXIT") == 0) break;
+            else {
+                // Relay message to other clients
+                for (int i = 0; i < session->clientCount; i++) {
+                    if (session->sessionPFDS[i].fd != cfd) {
+                        send(session->sessionPFDS[i].fd, networkBuf, numbytes, 0);
                     }
                 }
             }
+            
         }
     }
 
@@ -174,6 +178,10 @@ void* clientHandler(void* args)
         int optionByte = recv(cfd, &option, 1, 0);
         if (optionByte > 0) {
             printf("Client %d sent option %d\n", cfd, option);
+        }
+        if (optionByte <= 0) {
+            printf("Client %d disconnected in menu\n", cfd);
+            break;  
         }
         char *quiting = "Quiting Whisp";
 
@@ -298,6 +306,7 @@ int main(void)
 
     // Run forever
     while(1) {
+        printf("Server: waiting for new connections\n");
         sin_size = sizeof client_addr;
         newClient = accept(sockfd, (struct sockaddr *)&client_addr, &sin_size);
         if (newClient == -1) {
@@ -306,7 +315,7 @@ int main(void)
         }
 
         inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *)&client_addr), s, sizeof(s));
-        printf("server: connection secured from %s\n", s);
+        printf("Server: connection secured from %s\n", s);
 
         // Dedicated memory in case newClient is overwritten
         int *cSock = malloc(sizeof(int));
