@@ -18,6 +18,12 @@
 #define PORT "8888" // localhost port
 #define MAXBYTES 200
 
+typedef enum {
+    STATE_MENU,
+    STATE_HOSTING,
+    STATE_JOINING,
+    STATE_QUIT
+} ClientState;
 
 // get sockaddr, v4/v6 - Taken from Beej
 void *get_in_addr(struct sockaddr *sa)
@@ -168,13 +174,85 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
 }
 
 
+ClientState handleMenu(int sockfd){
+    
+    int choice = 0;
+    while(choice != 3){
+        printf("1. Host Session\n");
+        printf("2. Join Session\n");
+        printf("3. Quit\n");
+        printf("Enter choice: ");
+        scanf("%d", &choice);
+
+        switch(choice) {
+            // int optionByte = recv(cfd, &option, 1, 0);
+            case 1: 
+                // HOST
+                send(sockfd, &choice, 1, 0);
+                return STATE_HOSTING;
+                break;
+             
+            case 2: 
+                // JOIN
+                send(sockfd, &choice, 1, 0);
+                return STATE_JOINING;
+                break;
+            
+            case 3:
+                // QUIT
+                send(sockfd, &choice, 1, 0);  
+                return STATE_QUIT;
+                break;
+             
+            default:
+                printf("Invalid option\n");
+                return STATE_MENU;
+        }
+    }
+    return STATE_QUIT;
+}
+
+
+ClientState handleHost(int sockfd) {
+    // Get sessionID from server thread, it already knows you selected host
+    int32_t newSession_net;
+    int numbytes = recv(sockfd, &newSession_net, sizeof(int32_t), 0);
+    if (numbytes != sizeof(int32_t)) {
+        perror("Failed to receive session ID");
+        return STATE_MENU;
+    }
+    int32_t sessionId = ntohl(newSession_net);  // Convert from network order
+
+    printf("Your session ID: %d\n", sessionId);
+
+    // Chat loop
+
+    return STATE_MENU;
+}
+
+
+ClientState handleJoin(int sockfd) {
+    // Client sends sessionID to server whom is waiting
+    char sessionID[MAXBYTES];
+
+    scanf("SessionID: %s", sessionID);
+    // Error check later
+    send(sockfd, &sessionID, 1, 0);
+    // Get response from server, verify
+
+    // Chat Loop
+
+
+    return STATE_MENU;
+}
+
 
 
 int main(void) 
 {
-    // Connect to server, get back a message
-    int sockfd, numbytes;
-    char buf[MAXBYTES];
+    ClientState state = STATE_MENU;
+  
+    int sockfd;
     struct addrinfo hints, *servinfo, *p;
     int rv;
     char s[INET6_ADDRSTRLEN];
@@ -213,9 +291,6 @@ int main(void)
         break;
     }
 
-
-
-
     if (p == NULL) {
         fprintf(stderr, "client: failed to connect\n");
         return 2;
@@ -226,60 +301,26 @@ int main(void)
 
     freeaddrinfo(servinfo); // drop the linked list, we have a connection
 
-    /*
-        Display options:
-        1. Host Session
-        2. Join Session
-        3. Quit Application
-    */
 
-    // HOST
-
-    // JOIN
-
-    // QUIT
     printf("WELCOME TO WHISP\n");
-
-    int choice;
-    while(choice != 3){
-        printf("1. Host Session\n");
-        printf("2. Join Session\n");
-        printf("3. Quit\n");
-        printf("Enter choice: ");
-        scanf("%d", &choice);
-
-
-        switch(choice){
-            case 1: {
-                send(sockfd, &choice, 1, 0);
+    while(state != STATE_QUIT) {
+        switch(state) {
+            case STATE_MENU: 
+                state = handleMenu(sockfd);
                 break;
-            } 
-            case 2: {
-                send(sockfd, &choice, 1, 0);  
+            case STATE_HOSTING:
+                state = handleHost(sockfd);
                 break;
-            }
-            case 3:{
-                send(sockfd, &choice, 1, 0);  
+            case STATE_JOINING:
+                state = handleJoin(sockfd);
                 break;
-            } 
+            default:
+                state = handleMenu(sockfd);
+                break;
         }
-
-
-        if ((numbytes = recv(sockfd, buf, MAXBYTES-1, 0)) == -1) {
-            perror("recv");
-            exit(1);
-        }
-        buf[numbytes] = '\0';
-        printf("%s'\n", buf);
-
     }
-
-
-
-
 
     // Client closes app
     close(sockfd);
     return 0;
 }
-
