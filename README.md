@@ -7,3 +7,7 @@ Client -> Tor -> VPS -> Whisp (dumb relay) -> VPS -> Tor -> Client
 - sessionID allows the server to establish connection between clients, but the server never seens the encryption key.
 - Encryption key is used to decode messages locally within a session.
 
+
+
+- sudo -u debian-tor tor
+- ps aux | grep tor

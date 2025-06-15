@@ -20,3 +20,5 @@
 - https://community.torproject.org/onion-services/setup/
 - Seems easy. Install tor, add a couple lines to the torrc file.
 
+
+- I do not know when the hangup signal is called. When a socket is freed? Maybe. Need to look into.

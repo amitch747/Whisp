@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/poll.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -13,10 +14,11 @@
 
 #include <pthread.h>
 
+#include <poll.h>
 
 #define WHISP_ONION "bz5yr2xruyrp3hcfkcefaatool4r7jqpynpxvl5nvliqqkkac7d3x5yd.onion" // Hardcode for now. Not ideal.
 #define PORT "8888" // localhost port
-#define MAXBYTES 200
+#define MAXBYTES 256
 
 typedef enum {
     STATE_MENU,
@@ -183,6 +185,10 @@ ClientState handleMenu(int sockfd){
         printf("3. Quit\n");
         printf("Enter choice: ");
         scanf("%d", &choice);
+        
+        // Clean stdin
+        int c;
+        while ((c = getchar()) != '\n' && c != EOF);
 
         switch(choice) {
             // int optionByte = recv(cfd, &option, 1, 0);
@@ -194,6 +200,7 @@ ClientState handleMenu(int sockfd){
              
             case 2: 
                 // JOIN
+                printf("Join selected");
                 send(sockfd, &choice, 1, 0);
                 return STATE_JOINING;
                 break;
@@ -213,6 +220,71 @@ ClientState handleMenu(int sockfd){
 }
 
 
+
+
+
+void chatLoop(int sockfd) {
+    printf("Type EXIT to return to menu\n");
+    // Setup poll. Client side ONLY tracks the socket connceted to tor and the fd for the keyboard
+    struct pollfd pfds[2];
+    pfds[0].fd = sockfd; // Tor socket
+    pfds[0].events = POLLIN;
+    pfds[1].fd = STDIN_FILENO; // Keyboard input
+    pfds[1].events = POLLIN;
+
+
+    char networkBuf[256];
+    // Chat loop
+    for(;;) {
+        printf("Chatloop\n");
+        int pollCount = poll(pfds, 2, -1); // Block until keyboard or network change
+
+        if (pollCount == -1) {
+            perror("poll");
+            exit(1);
+        }
+
+        if (pfds[0].revents & POLLHUP) {
+            // Hangup, shut it down
+            printf("Hangup signal from server! Returning to menu\n");
+            break;
+        }
+
+        if (pfds[0].revents & POLLIN) {
+            printf("Pollin\n");
+            // Message (maybe)
+            memset(networkBuf, 0, sizeof(networkBuf)); 
+
+            int numbytes = recv(sockfd, &networkBuf, sizeof(networkBuf), 0);
+            if (numbytes <= 0) {
+                printf("Empty message\n");
+            }
+            else {
+                printf("%s", networkBuf);
+            }
+
+        }
+        
+        if (pfds[1].revents & POLLIN) {
+            printf("Keyboard\n");
+            // Client keyboard
+            char input[256];
+            if (fgets(input, sizeof(input), stdin) != NULL) {
+                //printf("DEBUG: Read '%s' (length %zu)\n", input, strlen(input));
+
+                // Replace the newline character
+                input[strcspn(input, "\n")] = '\0';
+
+
+                // Send message
+                send(sockfd, input, strlen(input) + 1, 0); // Including null here
+                if (strcmp(input, "EXIT") == 0) break;
+
+            }
+        }
+    }
+}
+
 ClientState handleHost(int sockfd) {
     // Get sessionID from server thread, it already knows you selected host
     int32_t newSession_net;
@@ -222,26 +294,35 @@ ClientState handleHost(int sockfd) {
         return STATE_MENU;
     }
     int32_t sessionId = ntohl(newSession_net);  // Convert from network order
-
     printf("Your session ID: %d\n", sessionId);
 
-    // Chat loop
-
+    chatLoop(sockfd);
     return STATE_MENU;
 }
 
 
 ClientState handleJoin(int sockfd) {
+    printf("Handling join\n");
     // Client sends sessionID to server whom is waiting
-    char sessionID[MAXBYTES];
-
-    scanf("SessionID: %s", sessionID);
-    // Error check later
-    send(sockfd, &sessionID, 1, 0);
+    int32_t sessionID;
+    printf("Provide sessionID: ");
+    scanf("%d", &sessionID);
+    int32_t netSessionID = htonl(sessionID);  // Convert to network order
+    send(sockfd, &netSessionID, sizeof(int32_t), 0);
     // Get response from server, verify
+    printf("Waiting for server confirmation...\n");
 
-    // Chat Loop
-
+    int confirm;
+    recv(sockfd, &confirm, sizeof(int), 0);
+    if (confirm == 1) {
+        // Joined session
+        // Chat Loop
+        chatLoop(sockfd);
+    }
+    else if (confirm == 2) {
+        // Session full
+        printf("Session is full try again later\n");
+    }
 
     return STATE_MENU;
 }

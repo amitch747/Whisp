@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/poll.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -16,6 +17,9 @@
 #include <pthread.h>
 
 #include <sodium.h>
+
+#include <poll.h>
+
 
 #define PORT "8888" // localhost port
 #define BACKLOG 10 // pending connections for listen queue
@@ -33,33 +37,129 @@ void *get_in_addr(struct sockaddr *sa)
 
 
 
-int32_t createSession(int cfd, Session* sessionList) {
+int32_t createSession(int cfd, Session* sessionList) 
+{
     // generate and add to list. return -1 if unable
     for (int i = 0; i < MAXSESSIONS; i++) {
         if (!sessionList[i].active) {
             sessionList[i].active = 1;
-            sessionList[i].sfdArray[0] = cfd; // Assign host file descriptor to array
+            sessionList[i].sessionPFDS[0].fd = cfd; // Assign host file descriptor
+            sessionList[i].sessionPFDS[0].events = POLLIN;
             sessionList[i].clientCount = 1;
             sessionList[i].createdTime = time(NULL);
             sessionList[i].sessionId = randombytes_uniform(999999) + 100000; // Uses somekind of OS entropy?
         
             for (int c = 1; c < MAXCLIENTS; c++) {
-                sessionList[i].sfdArray[c] = -1; // -1 for empty slot
+                sessionList[i].sessionPFDS[c].fd = -1; // -1 for empty slot
             }
             return sessionList[i].sessionId;
-
         }
-    
+    }
+    return -1;
+}
+
+void chatRelay(int cfd, Session* session) 
+{
+    // DO NOT CHANGE SESSION DATA HERE
+    // Assume that the session's sessionPFDS array is already set
+    char networkBuf[256];
+
+    int cfdIndex = -1;
+    // Yuck
+    for (int i = 0; i < session->clientCount; i++) {
+        if (session->sessionPFDS[i].fd == cfd) {
+            cfdIndex = i;
+            break;
+        }
+    }
+    if (cfdIndex == -1) {
+        printf("Error: Client %d not found in session\n", cfd);
+        return;
     }
 
 
-    return -1;
+    for (;;) {
+        int clientCount = session->clientCount;
+        struct pollfd sessionPFDS[MAXCLIENTS];
+        memcpy(sessionPFDS, session->sessionPFDS, sizeof(sessionPFDS));
+
+        printf("Server chatRelay loop for thread %d\n",cfd);
+        int pollCount = poll(sessionPFDS, clientCount, -1); // Block until data in a socket
+    
+        if (pollCount == -1) {
+            perror("poll");
+            exit(1);
+        }
+
+        // Handle personal cfd, also check for input from others, if recived send to cfd client
+        if (sessionPFDS[cfdIndex].revents & POLLHUP) {
+            // Hangup, shut it down
+            printf("Hangup signal from client! Returning to menu\n");
+            break;
+        }
+
+        if (sessionPFDS[cfdIndex].revents & POLLIN) {
+            printf("cfd sent a message\n");
+            // Message (maybe)
+            memset(networkBuf, 0, sizeof(networkBuf)); 
+            // ATM networkbuf data is not decrypted. Later it will be so server cannot see it at all
+            int numbytes = recv(cfd, &networkBuf, sizeof(networkBuf), 0);
+            if (numbytes <= 0) {
+                printf("Empty message\n");
+            }
+            else {
+                printf("Client message: %s\n",networkBuf);
+
+                if (strcmp(networkBuf, "EXIT") == 0) break;
+                else {
+                    // Relay message to others
+                    for (int i = 0; i < clientCount; i++) {
+                        if (sessionPFDS[i].fd != cfd) {
+                            send(sessionPFDS[i].fd, networkBuf, sizeof(networkBuf), 0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    return;
+}
+
+
+int validateSession(int32_t sessionID, Session* sessionList) {
+    for (int i = 0; i < MAXSESSIONS; i++) {
+        if (sessionList[i].active && sessionList[i].sessionId == sessionID){
+            if (sessionList[i].clientCount == MAXSESSIONS) {
+                return 2;
+            }
+            else {
+                return 1;
+            }
+        } 
+    }
+
+    return 0;
+}
+
+Session* addToSession(int cfd, Session* sessionList, int32_t sessionID) 
+{
+    for (int i = 0; i < MAXSESSIONS; i++) {
+        if (sessionList[i].active && sessionList[i].sessionId == sessionID){
+            sessionList[i].clientCount += 1;
+            sessionList[i].sessionPFDS[sessionList[i].clientCount -1].fd = cfd;
+            sessionList[i].sessionPFDS[sessionList[i].clientCount -1].events = POLLIN;
+            return &sessionList[i];
+        } 
+    }
+    return NULL;
 }
 
 
 
-
-void* clientHandler(void* args) {
+void* clientHandler(void* args) 
+{
     struct ThreadArgs* thread_args = (struct ThreadArgs*)args;
     int cfd = *(int*)thread_args->client_fd;
     Session* sessionList = thread_args->sessions;
@@ -69,49 +169,60 @@ void* clientHandler(void* args) {
     printf("Connection on thread %i\n",cfd);
     // Get Option
     int option = 0;
-    while(option != 3){
+    while(option != 3) {
+        printf("Menu loop thread %i\n",cfd);
         int optionByte = recv(cfd, &option, 1, 0);
         if (optionByte > 0) {
             printf("Client %d sent option %d\n", cfd, option);
         }
-        char *joining = "Joining";
         char *quiting = "Quiting Whisp";
 
         switch(option){
             case 1: {
+                // HOST
                 int32_t newSession = createSession(cfd, sessionList);
                 int32_t newSession_net = htonl(newSession);  // Convert to network order
-
-                send(cfd, &newSession_net, sizeof(int32_t), 0); // Send client sessionID or -1 if failed
-                // More here. Do I keep it in a loop? New function? Wait for another response?
+                send(cfd, &newSession_net, sizeof(int32_t), 0); // Send host client sessionID or -1 if failed
+                // Host is in session, and on their end they are in the chat loop.
+                // Find session
+                Session* hostSession;
+                for (int i = 0; i < MAXSESSIONS; i++) {
+                    if (sessionList[i].sessionId == newSession) {
+                        hostSession = &sessionList[i];
+                        break;
+                    }
+                }
+                chatRelay(cfd, hostSession);
+                // Remove this guy from the session, also check if session is now empty
+                printf("Client %d said EXIT\n", cfd);
                 break;
             }
             case 2: {
-                send(cfd, joining, strlen(joining), 0);  
+                // JOIN
+                int32_t joinSession_net;
+                recv(cfd, &joinSession_net, sizeof(int32_t), 0);
+                int32_t sessionId = ntohl(joinSession_net);  // Convert from network order
+                // Confirm this sessionID is valid
+                int valid = validateSession(sessionId, sessionList);
+                send(cfd, &valid, sizeof(int), 0);
+                // Add to session
+                Session* clientSession = addToSession(cfd, sessionList, sessionId);
+                // Chat loop
+                chatRelay(cfd, clientSession);
+                // Remove this guy from the session, also check if session is now empty
                 break;
             }
             case 3: {
+                // QUIT
                 send(cfd,quiting, strlen(quiting), 0);  
                 break;
             }
         }
     }
-
-
-
-    // char buffer[1024];
-    // int bytes = recv(cfd, buffer, sizeof(buffer)-1, 0);
-    // if (bytes > 0) {
-    //     buffer[bytes] = '\0';
-    //     printf("Thread %d received: %s\n", cfd, buffer);
-    //     char *msg = "Thx for the message bozo";
-    //     send(cfd, msg, strlen(msg), 0);    
-    // }
-    
-    
     close(cfd);
     return NULL;
 }
+
 
 
 int main(void)
@@ -120,7 +231,6 @@ int main(void)
         fprintf(stderr, "Sodium not working!!!\n");
         exit(1);
     }
-
 
     Session currentSessions[MAXSESSIONS];
     for (int i = 0; i < MAXSESSIONS; i++) {
@@ -165,10 +275,13 @@ int main(void)
         // Bind socket
         if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
+
             perror("server: bind");
             continue;
         }
+
         break;
+
     }
     freeaddrinfo(servinfo); // No need for this anymore, we have our listen socket
 
