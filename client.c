@@ -237,7 +237,7 @@ void chatLoop(int sockfd) {
     char networkBuf[256];
     // Chat loop
     for(;;) {
-        printf("Chatloop\n");
+        //printf("Chatloop\n");
         int pollCount = poll(pfds, 2, -1); // Block until keyboard or network change
 
         if (pollCount == -1) {
@@ -260,7 +260,7 @@ void chatLoop(int sockfd) {
                 printf("Empty message\n");
             }
             else {
-                printf("???: %s\n", networkBuf);
+                printf("????: %s\n", networkBuf);
             }
 
         }
@@ -274,7 +274,7 @@ void chatLoop(int sockfd) {
                 // Replace the newline character
                 input[strcspn(input, "\n")] = '\0';
 
-                printf("CLIENT DEBUG: About to send '%s' (length %zu)\n", input, strlen(input));
+                //printf("CLIENT DEBUG: About to send '%s' (length %zu)\n", input, strlen(input));
 
                 // Send message
                 send(sockfd, input, strlen(input) + 1, 0); // Including null here
@@ -299,6 +299,7 @@ ClientState handleHost(int sockfd) {
     chatLoop(sockfd);
     return STATE_MENU;
 }
+
 
 
 ClientState handleJoin(int sockfd) {
