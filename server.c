@@ -24,6 +24,8 @@
 #define PORT "8888" 
 #define BACKLOG 10 // pending connections for listen queue
 #define MAXSESSIONS 10
+#define MAXCONNECTIONS 20
+int clientConnections = 0;
 static Session* g_sessions = NULL; // Used for server failure
 
 
@@ -153,7 +155,7 @@ void chatRelay(int cfd, Session* session)
 
 
 int validateSession(int32_t sessionID, Session* sessionList) {
-    for (int i = 0; i < MAXCLIENTS; i++) {
+    for (int i = 0; i < MAXSESSIONS; i++) {
         if (sessionList[i].active && sessionList[i].sessionId == sessionID){
             if (sessionList[i].clientCount == MAXCLIENTS) {
                 return 2;
@@ -268,7 +270,9 @@ void* clientHandler(void* args)
             }
         }
     }
+
     close(cfd);
+    clientConnections--;
     return NULL;
 }
 
@@ -364,6 +368,12 @@ int main(void)
             perror("server: accept");
             continue;
         }
+        if (clientConnections >= MAXCONNECTIONS) {
+            fprintf(stderr, "Max connections reached. Client rejected\n");
+            close(newClient);
+            continue;
+        }
+
 
         inet_ntop(client_addr.ss_family, getInAddress((struct sockaddr *)&client_addr), s, sizeof(s));
         printf("Server: connection secured from %s\n", s);
@@ -378,8 +388,21 @@ int main(void)
 
 
         pthread_t cThread;
-        pthread_create(&cThread, NULL, &clientHandler, args);
-        pthread_detach(cThread);
+        clientConnections++;
+
+        int pthreadResult = pthread_create(&cThread, NULL, &clientHandler, args);
+        if (pthreadResult != 0) {
+            fprintf(stderr, "pthread_create failure: %s\n", strerror(pthreadResult));
+            free(cSock);
+            close(newClient); 
+            free(args);
+            clientConnections--;
+            continue;
+        }
+        pthreadResult = pthread_detach(cThread);
+        if (pthreadResult != 0) {
+            fprintf(stderr, "pthread_detach failure: %s\n", strerror(pthreadResult));
+        }    
     }
     return 0;
 }
