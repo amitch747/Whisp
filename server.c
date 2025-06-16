@@ -36,6 +36,21 @@ void *get_in_addr(struct sockaddr *sa)
 }
 
 
+int findSessionIndex(int cfd, Session* session) {
+    int cfdIndex = -1;
+    for (int i = 0; i < MAXCLIENTS; i++) {
+        if (session->sessionPFDS[i].fd == cfd) {
+            cfdIndex = i;
+            break;
+        }
+    }
+    if (cfdIndex == -1) {
+        printf("Error: Client %d not found in session\n", cfd);
+        return cfdIndex;
+    }
+    return cfdIndex;
+}
+
 
 int32_t createSession(int cfd, Session* sessionList) 
 {
@@ -64,19 +79,7 @@ void chatRelay(int cfd, Session* session)
     // Assume that the session's sessionPFDS array is already set
     char networkBuf[256];
 
-    int cfdIndex = -1;
-    // Yuck
-    for (int i = 0; i < session->clientCount; i++) {
-        if (session->sessionPFDS[i].fd == cfd) {
-            cfdIndex = i;
-            break;
-        }
-    }
-    if (cfdIndex == -1) {
-        printf("Error: Client %d not found in session\n", cfd);
-        return;
-    }
-
+    int cfdIndex = findSessionIndex(cfd, session);
 
     struct pollfd mySocket;
     mySocket.fd = cfd;
@@ -160,6 +163,17 @@ Session* addToSession(int cfd, Session* sessionList, int32_t sessionID)
     return NULL;
 }
 
+void leaveSession(int cfd, Session* session) {
+    // Remove user from session
+     session->clientCount -= 1;
+     int cfdIndex = findSessionIndex(cfd, session);
+     session->sessionPFDS[cfdIndex].fd = -1;
+    // Wipe session if out of users (I NEED MUTEX LOCKS THIS COULD BE NASTY)
+    if (session->clientCount == 0) {
+        session->active = 0;
+        session->sessionId = -1;
+    }
+}
 
 
 void* clientHandler(void* args) 
@@ -202,7 +216,8 @@ void* clientHandler(void* args)
                 }
                 chatRelay(cfd, hostSession);
                 // Remove this guy from the session, also check if session is now empty
-                printf("Client %d said EXIT\n", cfd);
+                leaveSession(cfd, hostSession);
+
                 break;
             }
             case 2: {
@@ -218,6 +233,7 @@ void* clientHandler(void* args)
                 // Chat loop
                 chatRelay(cfd, clientSession);
                 // Remove this guy from the session, also check if session is now empty
+                leaveSession(cfd, clientSession);
                 break;
             }
             case 3: {
@@ -230,6 +246,7 @@ void* clientHandler(void* args)
     close(cfd);
     return NULL;
 }
+
 
 
 
