@@ -9,6 +9,8 @@
 - mutex lock for each sesison
 - threadcleanup incase of failure during the chat loop
 
+- Put function declarations in .h
+
 - Partial sends
 - Serialization??? - Maybe no need to do anything special here, only sending text. Keep it simple.
 - Encapsulation protocol - Keep it similar to beej's example

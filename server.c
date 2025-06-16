@@ -21,14 +21,38 @@
 #include <poll.h>
 
 
-#define PORT "8888" 
-#define BACKLOG 10 // pending connections for listen queue
-#define MAXSESSIONS 10
-#define MAXCONNECTIONS 20
+
 int clientConnections = 0;
 static Session* g_sessions = NULL; // Used for server failure
 
 
+int sendAll(int sock, void* buf, int len) {
+    char* dataBuf = (char*)buf;
+    int sentBytes = 0; // Bytes sent
+    int numBytes;
+    
+    while(sentBytes < len) {
+        numBytes = send(sock, dataBuf + sentBytes, len - sentBytes, 0);
+        if (numBytes <= 0) {break;} // Problem with send()
+        sentBytes += numBytes;
+    }
+
+    return (numBytes <= 0 ? -1 : sentBytes); // -1 on fail
+}
+
+int recvAll(int sock, void* buf, int len) {
+    char* dataBuf = (char*)buf;
+    int recvBytes = 0; // Bytes sent
+    int numBytes;
+    
+    while(recvBytes < len) {
+        numBytes = recv(sock, dataBuf + recvBytes, len - recvBytes, 0);
+        if (numBytes <= 0) {break;} // Problem with send()
+        recvBytes += numBytes;
+    }
+
+    return (numBytes <= 0 ? -1 : recvBytes); // -1 on fail
+}
 
 static void sigintHandler()
 {
@@ -136,22 +160,23 @@ void chatRelay(int cfd, Session* session)
 
             printf("Client %d message: %s\n",cfd, networkBuf);
 
-            if (strcmp(networkBuf, "EXIT") == 0) break;
-            else {
+            if (strcmp(networkBuf, "EXIT") == 0) { 
+                break;
+            } else {
                 // Relay message to other clients
                 for (int i = 0; i < MAXCLIENTS; i++) {
                     if ((session->sessionPFDS[i].fd != cfd) && session->sessionPFDS[i].fd != -1) {
-                        send(session->sessionPFDS[i].fd, networkBuf, numbytes, 0);
+                        if(sendAll(session->sessionPFDS[i].fd, networkBuf, numbytes) == -1) {
+                                printf("Failed sendAll to  %d\n", session->sessionPFDS[i].fd);
+                        }
                     }
                 }
             }
-            
-        }
+        }   
     }
-
-
     return;
 }
+
 
 
 int validateSession(int32_t sessionID, Session* sessionList) {
@@ -185,16 +210,20 @@ Session* addToSession(int cfd, Session* sessionList, int32_t sessionID)
 void leaveSession(int cfd, Session* session) {
     int cfdIndex = findSessionIndex(cfd, session);
 
+    if (cfdIndex == -1) {
+        printf("Error: Somehow client %d is not in session\n",cfd);
+        return;
+    }
+
     // Remove user from session
-     session->clientCount -= 1;
-     session->sessionPFDS[cfdIndex].fd = -1;
+    session->clientCount -= 1;
 
     // Start at leaving index, slide the rest down
-    for (int j = cfdIndex; j < MAXCLIENTS - 1; ++j) {
+    for (int j = cfdIndex; j < session->clientCount; ++j) {
         session->sessionPFDS[j] = session->sessionPFDS[j + 1];
     }
 
-    session->sessionPFDS[MAXCLIENTS - 1].fd = -1; 
+    session->sessionPFDS[session->clientCount].fd = -1; // Clear last slot
 
 
     // Wipe session if out of users (I NEED MUTEX LOCKS THIS COULD BE NASTY)
@@ -218,21 +247,25 @@ void* clientHandler(void* args)
     int option = 0;
     while(option != 3) {
         printf("Menu loop thread %i\n",cfd);
-        int optionByte = recv(cfd, &option, 1, 0);
-        if (optionByte > 0) {
-            printf("Client %d sent option %d\n", cfd, option);
-        }
-        if (optionByte <= 0) {
-            printf("Client %d disconnected in menu\n", cfd);
-            break;  
-        }
 
+        if (recvAll(cfd, &option, 1) <= 0) {
+            printf("Client %d disconnected in menu\n", cfd);
+            break;
+        }
+        
+        printf("Client %d sent option %d\n", cfd, option);
+        
         switch(option){
             case 1: {
                 // HOST
                 int32_t newSession = createSession(cfd, sessionList);
                 int32_t newSession_net = htonl(newSession);  // Convert to network order
-                send(cfd, &newSession_net, sizeof(int32_t), 0); // Send host client sessionID or -1 if failed
+                int len = sizeof(int32_t);
+                // Send host client sessionID
+                if(sendAll(cfd, &newSession_net,sizeof(int32_t)) == -1) { 
+                    printf("Failed to send session ID to client %d. Returning to menu\n", cfd);
+                    break;  // Exit this case, client will disconnect
+                }
                 // Host is in session, and on their end they are in the chat loop
                 // Find assigned session
                 Session* hostSession;
@@ -251,11 +284,17 @@ void* clientHandler(void* args)
             case 2: { 
                 // JOIN
                 int32_t joinSession_net;
-                recv(cfd, &joinSession_net, sizeof(int32_t), 0);
+                if (recvAll(cfd, &joinSession_net, sizeof(int32_t)) <= 0) {
+                    printf("Failed to receive session ID from client %d\n", cfd);
+                    break;
+                }                
                 int32_t sessionId = ntohl(joinSession_net);  // Convert from network order
                 // Confirm valid sessionID 
                 int valid = validateSession(sessionId, sessionList);
-                send(cfd, &valid, sizeof(int), 0);
+                if (sendAll(cfd, &valid, sizeof(int)) == -1) {
+                    printf("Failed to send session validation code for %d\n", cfd);
+                    break;  
+                }
                 // Add to session
                 Session* clientSession = addToSession(cfd, sessionList, sessionId);
                 // Chat loop

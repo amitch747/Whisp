@@ -1,7 +1,13 @@
 #include <stdint.h>
 #include <time.h>
 #include <poll.h>
+
+#define MAXCONNECTIONS 20
+#define MAXSESSIONS 10
 #define MAXCLIENTS 4
+#define PORT "8888" 
+#define BACKLOG 20 // pending connections for listen queue
+
 
 typedef struct {
     int32_t sessionId;
