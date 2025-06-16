@@ -276,6 +276,7 @@ void chatLoop(int sockfd) {
 
                 //printf("CLIENT DEBUG: About to send '%s' (length %zu)\n", input, strlen(input));
 
+
                 // Send message
                 send(sockfd, input, strlen(input) + 1, 0); // Including null here
                 if (strcmp(input, "EXIT") == 0) break;
