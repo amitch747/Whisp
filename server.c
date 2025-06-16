@@ -21,13 +21,33 @@
 #include <poll.h>
 
 
-#define PORT "8888" // localhost port
+#define PORT "8888" 
 #define BACKLOG 10 // pending connections for listen queue
 #define MAXSESSIONS 10
+static Session* g_sessions = NULL; // Used for server failure
 
+
+
+static void sigintHandler()
+{
+    const char *bye = "SERVER_GOING_AWAY";
+    for (int s = 0; s < MAXSESSIONS; ++s) {
+        if (!g_sessions[s].active) continue;
+
+        for (int c = 0; c < MAXCLIENTS; ++c) {
+            int fd = g_sessions[s].sessionPFDS[c].fd;
+            if (fd == -1) continue;
+
+            
+            send(fd, bye, strlen(bye) + 1, MSG_NOSIGNAL); // MSG_NOSIGNAL ignores send errors. Don't care.
+            shutdown(fd, SHUT_RDWR); // FIN 
+        }
+    }
+    _exit(0); // Special kernel exit
+}
 
 // get sockaddr, v4/v6 - Taken from Beej
-void *get_in_addr(struct sockaddr *sa)
+void *getInAddress(struct sockaddr *sa)
 {
     if(sa->sa_family == AF_INET) {
         return &(((struct sockaddr_in*)sa)->sin_addr);
@@ -73,18 +93,15 @@ int32_t createSession(int cfd, Session* sessionList)
     return -1;
 }
 
+
 void chatRelay(int cfd, Session* session) 
 {
-    // DO NOT CHANGE SESSION DATA HERE
     // Assume that the session's sessionPFDS array is already set
     char networkBuf[256];
-
-    //int cfdIndex = findSessionIndex(cfd, session);
 
     struct pollfd mySocket;
     mySocket.fd = cfd;
     mySocket.events = POLLIN;
-
 
     for (;;) {
        // int clientCount = session->clientCount;
@@ -136,9 +153,9 @@ void chatRelay(int cfd, Session* session)
 
 
 int validateSession(int32_t sessionID, Session* sessionList) {
-    for (int i = 0; i < MAXSESSIONS; i++) {
+    for (int i = 0; i < MAXCLIENTS; i++) {
         if (sessionList[i].active && sessionList[i].sessionId == sessionID){
-            if (sessionList[i].clientCount == MAXSESSIONS) {
+            if (sessionList[i].clientCount == MAXCLIENTS) {
                 return 2;
             }
             else {
@@ -207,7 +224,6 @@ void* clientHandler(void* args)
             printf("Client %d disconnected in menu\n", cfd);
             break;  
         }
-        char *quiting = "Quiting Whisp";
 
         switch(option){
             case 1: {
@@ -215,8 +231,8 @@ void* clientHandler(void* args)
                 int32_t newSession = createSession(cfd, sessionList);
                 int32_t newSession_net = htonl(newSession);  // Convert to network order
                 send(cfd, &newSession_net, sizeof(int32_t), 0); // Send host client sessionID or -1 if failed
-                // Host is in session, and on their end they are in the chat loop.
-                // Find session
+                // Host is in session, and on their end they are in the chat loop
+                // Find assigned session
                 Session* hostSession;
                 for (int i = 0; i < MAXSESSIONS; i++) {
                     if (sessionList[i].sessionId == newSession) {
@@ -230,12 +246,12 @@ void* clientHandler(void* args)
 
                 break;
             }
-            case 2: {
+            case 2: { 
                 // JOIN
                 int32_t joinSession_net;
                 recv(cfd, &joinSession_net, sizeof(int32_t), 0);
                 int32_t sessionId = ntohl(joinSession_net);  // Convert from network order
-                // Confirm this sessionID is valid
+                // Confirm valid sessionID 
                 int valid = validateSession(sessionId, sessionList);
                 send(cfd, &valid, sizeof(int), 0);
                 // Add to session
@@ -246,9 +262,8 @@ void* clientHandler(void* args)
                 leaveSession(cfd, clientSession);
                 break;
             }
-            case 3: {
+            case 3: { 
                 // QUIT
-                send(cfd,quiting, strlen(quiting), 0);  
                 break;
             }
         }
@@ -273,7 +288,16 @@ int main(void)
         currentSessions[i].clientCount = 0;
     }
 
+    g_sessions = currentSessions;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof sa); // Lots of other stuff to ignore
+    sa.sa_handler = sigintHandler; // This is a union. Look into more kinda interesting
 
+    
+    sigemptyset(&sa.sa_mask); // Clear mask
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);  // Ctrl-C
+    sigaction(SIGTERM, &sa, NULL); // kill
 
 
     int sockfd, newClient;
@@ -341,7 +365,7 @@ int main(void)
             continue;
         }
 
-        inet_ntop(client_addr.ss_family, get_in_addr((struct sockaddr *)&client_addr), s, sizeof(s));
+        inet_ntop(client_addr.ss_family, getInAddress((struct sockaddr *)&client_addr), s, sizeof(s));
         printf("Server: connection secured from %s\n", s);
 
         // Dedicated memory in case newClient is overwritten

@@ -28,7 +28,7 @@ typedef enum {
 } ClientState;
 
 // get sockaddr, v4/v6 - Taken from Beej
-void *get_in_addr(struct sockaddr *sa)
+void *getInAddress(struct sockaddr *sa)
 {
     if(sa->sa_family == AF_INET) {
         return &(((struct sockaddr_in*)sa)->sin_addr);
@@ -176,46 +176,87 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
 }
 
 
-ClientState handleMenu(int sockfd){
+ClientState handleMenu(int sockfd)
+ {
+    struct pollfd pfds[2];
+    pfds[0].fd = sockfd;
+    pfds[0].events = POLLIN | POLLERR | POLLHUP;
+    pfds[1].fd = STDIN_FILENO;
+    pfds[1].events = POLLIN;
+
     int choice = 0;
     char line[MAXBYTES];
 
-    while(choice != 3){
+    for (;;) {
         printf("1. Host Session\n2. Join Session\n3. Quit\nEnter choice: ");
-        
-        if (fgets(line, sizeof(line), stdin) != NULL) {
-            choice = atoi(line);
-            memset(line, 0, sizeof(line));
-            switch(choice) {
-                // int optionByte = recv(cfd, &option, 1, 0);
-                case 1: 
-                    // HOST
-                    send(sockfd, &choice, 1, 0);
-                    return STATE_HOSTING;
-                    break;
-                 
-                case 2: 
-                    // JOIN
-                    printf("Join selected");
-                    send(sockfd, &choice, 1, 0);
-                    return STATE_JOINING;
-                    break;
-                
-                case 3:
-                    // QUIT
-                    send(sockfd, &choice, 1, 0);  
-                    return STATE_QUIT;
-                    break;
-                 
-                default:
-                    printf("Invalid option\n");
-                    return STATE_MENU;
-            }
+        fflush(stdout);
 
-
+        if (poll(pfds, 2, -1) == -1) { 
+            perror("poll"); 
+            return STATE_QUIT; 
         }
 
-       
+        if (pfds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+            printf("\nLost connection to server – exiting.\n");
+            return STATE_QUIT;
+        }
+        
+        if (pfds[0].revents & POLLIN) {
+            char buf[MAXBYTES];
+            int n = recv(sockfd, buf, sizeof buf, 0);
+        
+            if (n == 0) {                      /* orderly FIN → EOF */
+                printf("\nServer closed the connection.\n");
+                return STATE_QUIT;
+            }
+            if (n < 0) {
+                perror("recv");
+                return STATE_QUIT;
+            }
+        
+            /* check for graceful-shutdown token */
+            if (strcmp(buf, "SERVER_GOING_AWAY") == 0) {
+                printf("\nServer is shutting down – goodbye.\n");
+                return STATE_QUIT;
+            }
+        
+            /* chatLoop: print message
+               handleMenu: (unlikely) ignore or handle menu-time notifications */
+        }
+
+
+        if (pfds[1].revents & POLLIN) {
+
+            if (fgets(line, sizeof(line), stdin) != NULL) {
+                choice = atoi(line);
+                memset(line, 0, sizeof(line));
+                switch(choice) {
+                    // int optionByte = recv(cfd, &option, 1, 0);
+                    case 1: 
+                        // HOST
+                        send(sockfd, &choice, 1, 0);
+                        return STATE_HOSTING;
+                        break;
+                    
+                    case 2: 
+                        // JOIN
+                        printf("Join selected");
+                        send(sockfd, &choice, 1, 0);
+                        return STATE_JOINING;
+                        break;
+                    
+                    case 3:
+                        // QUIT
+                        send(sockfd, &choice, 1, 0);  
+                        return STATE_QUIT;
+                        break;
+                    
+                    default:
+                        printf("Invalid option\n");
+                        return STATE_MENU;
+                }
+            }
+        }
     }
     return STATE_QUIT;
 }
@@ -257,7 +298,8 @@ void chatLoop(int sockfd) {
 
             int numbytes = recv(sockfd, &networkBuf, sizeof(networkBuf), 0);
             if (numbytes <= 0) {
-                printf("Empty message\n");
+                printf("Server error. Disconnecting\n");
+                break;
             }
             else {
                 printf("????: %s\n", networkBuf);
@@ -355,13 +397,14 @@ int main(void)
         return 1;
     }
 
+
     for (p = servinfo; p != NULL; p = p->ai_next) {
         if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
             perror("client: socket");
             continue;
         }
 
-        inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),s, sizeof s);
+        inet_ntop(p->ai_family, getInAddress((struct sockaddr *)p->ai_addr),s, sizeof s);
         printf("client: attemping connection to %s\n", s);
 
         if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
@@ -384,7 +427,7 @@ int main(void)
         return 2;
     }
 
-    inet_ntop(p->ai_family, get_in_addr((struct sockaddr *)p->ai_addr),s, sizeof s);
+    inet_ntop(p->ai_family, getInAddress((struct sockaddr *)p->ai_addr),s, sizeof s);
     printf("Client connected to %s\n", s);
 
     freeaddrinfo(servinfo); // drop the linked list, we have a connection
@@ -407,8 +450,6 @@ int main(void)
                 break;
         }
     }
-
-    // Client closes app
     close(sockfd);
     return 0;
 }
