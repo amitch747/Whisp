@@ -79,7 +79,7 @@ void chatRelay(int cfd, Session* session)
     // Assume that the session's sessionPFDS array is already set
     char networkBuf[256];
 
-    int cfdIndex = findSessionIndex(cfd, session);
+    //int cfdIndex = findSessionIndex(cfd, session);
 
     struct pollfd mySocket;
     mySocket.fd = cfd;
@@ -115,13 +115,13 @@ void chatRelay(int cfd, Session* session)
                 break;
             }
 
-            printf("Client message: %s\n",networkBuf);
+            printf("Client %d message: %s\n",cfd, networkBuf);
 
             if (strcmp(networkBuf, "EXIT") == 0) break;
             else {
                 // Relay message to other clients
-                for (int i = 0; i < session->clientCount; i++) {
-                    if (session->sessionPFDS[i].fd != cfd) {
+                for (int i = 0; i < MAXCLIENTS; i++) {
+                    if ((session->sessionPFDS[i].fd != cfd) && session->sessionPFDS[i].fd != -1) {
                         send(session->sessionPFDS[i].fd, networkBuf, numbytes, 0);
                     }
                 }
@@ -164,10 +164,20 @@ Session* addToSession(int cfd, Session* sessionList, int32_t sessionID)
 }
 
 void leaveSession(int cfd, Session* session) {
+    int cfdIndex = findSessionIndex(cfd, session);
+
     // Remove user from session
      session->clientCount -= 1;
-     int cfdIndex = findSessionIndex(cfd, session);
      session->sessionPFDS[cfdIndex].fd = -1;
+
+    // Start at leaving index, slide the rest down
+    for (int j = cfdIndex; j < MAXCLIENTS - 1; ++j) {
+        session->sessionPFDS[j] = session->sessionPFDS[j + 1];
+    }
+
+    session->sessionPFDS[MAXCLIENTS - 1].fd = -1; 
+
+
     // Wipe session if out of users (I NEED MUTEX LOCKS THIS COULD BE NASTY)
     if (session->clientCount == 0) {
         session->active = 0;
