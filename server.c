@@ -126,7 +126,7 @@ void chatRelay(int cfd, Session* session)
             }
             networkBuf[numbytes] = '\0'; 
 
-            printf("Client %d message: %s\n",cfd, networkBuf);
+            printf(RESET "Client %d message: %s" RESET "\n", cfd, networkBuf);
             if (strcmp(networkBuf, "EXIT") == 0) { 
                 printf("Exiting\n");
                 break;

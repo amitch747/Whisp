@@ -16,6 +16,7 @@
 #include "client.h"
 
 char username[12];
+char color[9];
 
 char* getWhispOnion() {
     char* onion = getenv("WHISP_ONION");
@@ -298,7 +299,7 @@ void unpackMessage(const char* buffer, ChatMessage* msgData) {
     }
     
     // Set color
-    if (color && strlen(color) == 7 && color[0] == '#') {
+    if (color && strlen(color) > 0) {
         strncpy(msgData->color, color, sizeof(msgData->color));
     } else {
         strcpy(msgData->color, DEFAULT_COLOR);
@@ -353,7 +354,7 @@ void chatLoop(int sockfd) {
             networkBuf[numbytes] = '\0'; 
             ChatMessage msgData;
             unpackMessage(networkBuf, &msgData);
-            printf("%s: %s\n",msgData.username, msgData.message);
+            printf("%s%s" RESET ": %s\n", msgData.color, msgData.username, msgData.message);
         }
         if (pfds[1].revents & POLLIN) {
             // Client keyboard
@@ -389,7 +390,7 @@ void chatLoop(int sockfd) {
                             return;
                         }
                         char msgBuffer[276];
-                        serializeMessage(msgBuffer, username, DEFAULT_COLOR, input);
+                        serializeMessage(msgBuffer, username, color, input);
                         sendAll(sockfd, msgBuffer, strlen(msgBuffer) + 1);
                     }
 
@@ -504,7 +505,7 @@ int main(void)
     freeaddrinfo(servinfo); // drop the linked list, we have a connection
 
 
-    printf("WELCOME TO WHISP\n");
+    printf("\n/////////// WELCOME TO WHISP ///////////\n\n");
     int valid = 0;
     while (!valid) {
         printf("Set username (ENTER to skip): ");
@@ -532,6 +533,31 @@ int main(void)
         }
     }
     printf("Username set: %s\n", username);
+    
+    printf("Choose message color:\n");
+    printf(RED "1. Red\n" RESET);
+    printf(GREEN "2. Green\n" RESET);
+    printf(YELLOW "3. Yellow\n" RESET);
+    printf(BLUE "4. Blue\n" RESET);
+    printf(MAGENTA "5. Magenta\n" RESET);
+    printf(CYAN "6. Cyan\n" RESET);
+    printf("Enter choice (1-6, ENTER to skip): ");
+    
+    char colorChoice[3];
+    if (fgets(colorChoice, sizeof(colorChoice), stdin) != NULL) {
+        int choice = atoi(colorChoice);
+        switch(choice) {
+            case 1: strcpy(color, RED); break;
+            case 2: strcpy(color, GREEN); break;
+            case 3: strcpy(color, YELLOW); break;
+            case 4: strcpy(color, BLUE); break;
+            case 5: strcpy(color, MAGENTA); break;
+            case 6: strcpy(color, CYAN); break;
+            default: strcpy(color, WHITE); break;
+        }
+    } else {
+        strcpy(color, WHITE);
+    }
 
     while(state != STATE_QUIT) {
         switch(state) {
