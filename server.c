@@ -25,7 +25,8 @@
 
 int clientConnections = 0;
 static Session* g_sessions = NULL; // Used for server failure
-
+pthread_mutex_t sessions_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t broadcast_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
 static void sigintHandler()
@@ -50,6 +51,7 @@ static void sigintHandler()
 
 
 int findSessionIndex(int cfd, Session* session) {
+
     int cfdIndex = -1;
     for (int i = 0; i < MAXCLIENTS; i++) {
         if (session->sessionPFDS[i].fd == cfd) {
@@ -61,12 +63,15 @@ int findSessionIndex(int cfd, Session* session) {
         printf("Error: Client %d not found in session\n", cfd);
         return cfdIndex;
     }
+
     return cfdIndex;
 }
 
 
 int32_t createSession(int cfd, Session* sessionList) 
 {
+    pthread_mutex_lock(&sessions_mutex);
+
     // generate and add to list. return -1 if unable
     for (int i = 0; i < MAXSESSIONS; i++) {
         if (!sessionList[i].active) {
@@ -80,9 +85,12 @@ int32_t createSession(int cfd, Session* sessionList)
             for (int c = 1; c < MAXCLIENTS; c++) {
                 sessionList[i].sessionPFDS[c].fd = -1; // -1 for empty slot
             }
+            pthread_mutex_unlock(&sessions_mutex);
+
             return sessionList[i].sessionId;
         }
     }
+    pthread_mutex_unlock(&sessions_mutex);
     return -1;
 }
 
@@ -132,6 +140,8 @@ void chatRelay(int cfd, Session* session)
                 break;
             } else {
                 // Relay message to other clients
+                pthread_mutex_lock(&broadcast_mutex);
+
                 for (int i = 0; i < MAXCLIENTS; i++) {
                     if ((session->sessionPFDS[i].fd != cfd) && session->sessionPFDS[i].fd != -1) {
                         if(sendAll(session->sessionPFDS[i].fd, networkBuf, numbytes) == -1) {
@@ -139,6 +149,7 @@ void chatRelay(int cfd, Session* session)
                         }
                     }
                 }
+                pthread_mutex_unlock(&broadcast_mutex);
             }
         }   
     }
@@ -148,38 +159,50 @@ void chatRelay(int cfd, Session* session)
 
 
 int validateSession(int32_t sessionID, Session* sessionList) {
+    pthread_mutex_lock(&sessions_mutex);
+
     for (int i = 0; i < MAXSESSIONS; i++) {
         if (sessionList[i].active && sessionList[i].sessionId == sessionID){
             if (sessionList[i].clientCount == MAXCLIENTS) {
+                pthread_mutex_unlock(&sessions_mutex);
+
                 return 2;
             }
             else {
+                pthread_mutex_unlock(&sessions_mutex);
+
                 return 1;
             }
         } 
     }
-
+    pthread_mutex_unlock(&sessions_mutex);
     return 0;
 }
 
 Session* addToSession(int cfd, Session* sessionList, int32_t sessionID) 
 {
+    pthread_mutex_lock(&sessions_mutex);
     for (int i = 0; i < MAXSESSIONS; i++) {
         if (sessionList[i].active && sessionList[i].sessionId == sessionID){
             sessionList[i].clientCount += 1;
             sessionList[i].sessionPFDS[sessionList[i].clientCount -1].fd = cfd;
             sessionList[i].sessionPFDS[sessionList[i].clientCount -1].events = POLLIN;
+            pthread_mutex_unlock(&sessions_mutex);
             return &sessionList[i];
         } 
     }
+    pthread_mutex_unlock(&sessions_mutex);
     return NULL;
 }
 
 void leaveSession(int cfd, Session* session) {
+    pthread_mutex_lock(&sessions_mutex);
+
     int cfdIndex = findSessionIndex(cfd, session);
 
     if (cfdIndex == -1) {
         printf("Error: Somehow client %d is not in session\n",cfd);
+        pthread_mutex_unlock(&sessions_mutex);
         return;
     }
 
@@ -199,6 +222,8 @@ void leaveSession(int cfd, Session* session) {
         session->active = 0;
         session->sessionId = -1;
     }
+    pthread_mutex_unlock(&sessions_mutex);
+
 }
 
 
@@ -213,8 +238,10 @@ void thread_cleanup(void* arg) {
     }
     
     close(data->cfd);
+    pthread_mutex_lock(&sessions_mutex);
     clientConnections--;
-    
+    pthread_mutex_unlock(&sessions_mutex);
+
     printf("Thread cleanup completed for client %d\n", data->cfd);
 }
 
@@ -260,6 +287,7 @@ void* clientHandler(void* args)
 
                 // Find assigned session
                 Session* hostSession;
+                pthread_mutex_lock(&sessions_mutex);
                 for (int i = 0; i < MAXSESSIONS; i++) {
                     if (sessionList[i].sessionId == newSession) {
                         hostSession = &sessionList[i];
@@ -267,6 +295,7 @@ void* clientHandler(void* args)
                         break;
                     }
                 }
+                pthread_mutex_unlock(&sessions_mutex);
 
                 // Chat loop
                 chatRelay(cfd, hostSession);
@@ -428,7 +457,9 @@ int main(void)
 
 
         pthread_t cThread;
+        pthread_mutex_lock(&sessions_mutex);
         clientConnections++;
+        pthread_mutex_unlock(&sessions_mutex);
 
         int pthreadResult = pthread_create(&cThread, NULL, &clientHandler, args);
         if (pthreadResult != 0) {
@@ -436,7 +467,10 @@ int main(void)
             free(cSock);
             close(newClient); 
             free(args);
+            pthread_mutex_lock(&sessions_mutex);
             clientConnections--;
+            pthread_mutex_unlock(&sessions_mutex);
+
             continue;
         }
         pthreadResult = pthread_detach(cThread);

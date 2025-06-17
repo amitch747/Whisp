@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <time.h>
 #include <poll.h>
+#include <pthread.h>
 
 #define MAXCONNECTIONS 20
 #define MAXSESSIONS 10
@@ -8,7 +9,8 @@
 #define PORT "8888" 
 #define BACKLOG 20 // pending connections for listen queue
 
-
+extern pthread_mutex_t sessions_mutex;
+extern pthread_mutex_t broadcast_mutex;
 
 
 typedef struct {

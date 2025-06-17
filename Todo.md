@@ -4,15 +4,14 @@
 - ~~Session creation. User creates session, gets sessionid, shares it, chats with other user.~~
 - ~~Session management~~
 - ~~Partial sends~~
+- ~~Mutex lock for each sesison~~
+- ~~Threadcleanup incase of failure during the chat loop~~
+
+- Input validation and enapsulation(framing) - Keep it similar to beej's example
+- Rate limiting ?
 
 - Fix naming conventions and clean up functions (lots of cleanup needed)
-
-- Mutex lock for each sesison
-- Threadcleanup incase of failure during the chat loop
-
 - Put function declarations in .h
-
-- Encapsulation protocol - Keep it similar to beej's example
 
 - Message encryption
 - Simple ui. Keep messages on screen for few seconds, then blow away.

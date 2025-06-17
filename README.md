@@ -11,3 +11,8 @@ Client -> Tor -> VPS -> Whisp (dumb relay) -> VPS -> Tor -> Client
 
 - sudo -u debian-tor tor
 - ps aux | grep tor
+
+
+
+gcc -Wall -Wextra -pedantic -pthread server.c utils.c -lsodium -o whisp-server
+gcc -Wall -Wextra -pedantic -o client client.c utils.c
