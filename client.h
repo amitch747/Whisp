@@ -10,3 +10,10 @@ typedef enum {
 } ClientState;
 
 
+typedef enum {
+    MSG_VALID,
+
+    MSG_EMPTY,
+    MSG_INVALID,
+    MSG_SPAM
+} MessageState;

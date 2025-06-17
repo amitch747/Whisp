@@ -241,7 +241,31 @@ ClientState handleMenu(int sockfd)
     return STATE_QUIT;
 }
 
+int isAsciiMsg(const char* input) {
+    for (size_t i = 0; input[i] != '\0'; i++) {
+        if (input[i] < 32 || input[i] > 126) {
+            return 0;
+        }
+    }
+    return 1;
+}
 
+MessageState validateMessage(const char* input) {
+    size_t len = strlen(input);
+    printf("msg length: %zu\n",len);
+    if (len == 0) return MSG_EMPTY;
+
+    static time_t lastMessage = 0; // Persists in memory 
+    time_t now = time(NULL);
+    if (now - lastMessage < 2) {
+        return MSG_SPAM;
+    }
+    lastMessage = now;
+
+    if (!isAsciiMsg(input)) return MSG_INVALID;
+
+    return MSG_VALID;
+}
 
 
 
@@ -286,27 +310,48 @@ void chatLoop(int sockfd) {
             }
 
         }
+
         
         if (pfds[1].revents & POLLIN) {
             // Client keyboard
             char input[256];
             if (fgets(input, sizeof(input), stdin) != NULL) {
-                //printf("DEBUG: Read '%s' (length %zu)\n", input, strlen(input));
+
+                // Check length
+                if (strchr(input, '\n') == NULL) {
+                    int c;
+                    while ((c = getchar()) != '\n' && c != EOF);
+                    printf("Message too long. Try again\n");
+                    continue;
+                }
 
                 // Replace the newline character
                 input[strcspn(input, "\n")] = '\0';
+                MessageState messageState = validateMessage(input);
 
-                //printf("CLIENT DEBUG: About to send '%s' (length %zu)\n", input, strlen(input));
-
-
-                // Send message
-                sendAll(sockfd, input, strlen(input) + 1);
-                if (strcmp(input, "EXIT") == 0) break;
-
+                switch(messageState) {
+                    case MSG_EMPTY:
+                        printf("Empty message. Try again\n");
+                        break;
+                    case MSG_SPAM:
+                        printf("Please don't spam\n");
+                        break;
+                    case MSG_INVALID:
+                        printf("Invalid ASCII characters\n");
+                        break;
+                    case MSG_VALID: 
+                        // Send message
+                        sendAll(sockfd, input, strlen(input) + 1);
+                        if (strcmp(input, "EXIT") == 0) return;
+                }
             }
         }
     }
+    
 }
+
+
+
 
 ClientState handleHost(int sockfd) {
     // Get sessionID from server thread, it already knows you selected host
