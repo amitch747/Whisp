@@ -7,6 +7,8 @@
 #define DEFAULT_NAME "????"
 #define DEFAULT_COLOR "#FFFFFF"
 
+#define PORT "8888" 
+
 typedef struct {
     char username[12];
     char color [8];

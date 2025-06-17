@@ -1,4 +1,6 @@
-#define PORT "8888" // localhost port
+#ifndef CLIENT_H
+#define CLIENT_H
+
 #define MAXBYTES 256
 
 typedef enum {
@@ -8,11 +10,11 @@ typedef enum {
     STATE_QUIT
 } ClientState;
 
-
 typedef enum {
     MSG_VALID,
-
     MSG_EMPTY,
     MSG_INVALID,
     MSG_SPAM
 } MessageState;
+
+#endif

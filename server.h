@@ -1,3 +1,6 @@
+#ifndef SERVER_H
+#define SERVER_H
+
 #include <stdint.h>
 #include <time.h>
 #include <poll.h>
@@ -6,8 +9,7 @@
 #define MAXCONNECTIONS 20
 #define MAXSESSIONS 10
 #define MAXCLIENTS 4
-#define PORT "8888" 
-#define BACKLOG 20 // pending connections for listen queue
+#define BACKLOG 20
 
 extern pthread_mutex_t sessions_mutex;
 extern pthread_mutex_t broadcast_mutex;
@@ -32,3 +34,5 @@ struct clientData {
     int cfd;
     Session* session;
 };
+
+#endif
