@@ -23,6 +23,7 @@
 #include "utils.h"
 
 
+
 int clientConnections = 0;
 static Session* g_sessions = NULL; // Used for server failure
 pthread_mutex_t sessions_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -262,7 +263,7 @@ void* clientHandler(void* args)
 
     printf("Connection on thread %i\n",cfd);
 
-    
+
 
     // Get Option
     int option = 0;

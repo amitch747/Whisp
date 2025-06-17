@@ -21,6 +21,16 @@
 
 char username[12];
 
+char* getWhispOnion() {
+    char* onion = getenv("WHISP_ONION");
+    if (!onion) {
+        fprintf(stderr, "Error: WHISP_ONION environment variable not set\n");
+        fprintf(stderr, "Please set: export WHISP_ONION=your_onion_address.onion\n");
+        exit(1);
+    }
+    return onion;
+}
+
 // Function needed to get through tor - SOCKS5 proxy
 int socks5Connect(int sockfd, const char * addr, const char * port) 
 {
@@ -487,7 +497,7 @@ int main(void)
         }
         
         // Now do SOCKS5 handshake
-        if (socks5Connect(sockfd, WHISP_ONION, PORT) == -1) {
+        if (socks5Connect(sockfd, getWhispOnion(), PORT) == -1) {
             perror("client: socks5 handshake failed");
             close(sockfd);
             continue;
@@ -495,6 +505,8 @@ int main(void)
         break;
     }
 
+
+    
     if (p == NULL) {
         fprintf(stderr, "client: failed to connect\n");
         return 2;
