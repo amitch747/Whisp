@@ -91,6 +91,7 @@ void chatRelay(int cfd, Session* session)
 {
     // Assume that the session's sessionPFDS array is already set
     char networkBuf[256];
+    memset(networkBuf, 0, sizeof(networkBuf)); 
 
     struct pollfd mySocket;
     mySocket.fd = cfd;
@@ -201,6 +202,22 @@ void leaveSession(int cfd, Session* session) {
 }
 
 
+
+void thread_cleanup(void* arg) {
+    struct clientData* data = (struct clientData*)arg;
+    
+    printf("Cleaning up thread for client %d\n", data->cfd);
+    
+    if (data->session) {
+        leaveSession(data->cfd, data->session);
+    }
+    
+    close(data->cfd);
+    clientConnections--;
+    
+    printf("Thread cleanup completed for client %d\n", data->cfd);
+}
+
 void* clientHandler(void* args) 
 {
     struct ThreadArgs* thread_args = (struct ThreadArgs*)args;
@@ -209,7 +226,14 @@ void* clientHandler(void* args)
     free(thread_args->client_fd);
     free(args);
 
+    // Cleanup handler
+    struct clientData clientCleanupData = {.cfd = cfd, .session = NULL}; // I like this syntax
+    pthread_cleanup_push(thread_cleanup, &clientCleanupData);
+
+
     printf("Connection on thread %i\n",cfd);
+
+
     // Get Option
     int option = 0;
     while(option != 3) {
@@ -227,25 +251,29 @@ void* clientHandler(void* args)
                 // HOST
                 int32_t newSession = createSession(cfd, sessionList);
                 int32_t newSession_net = htonl(newSession);  // Convert to network order
-                int len = sizeof(int32_t);
+
                 // Send host client sessionID
                 if(sendAll(cfd, &newSession_net,sizeof(int32_t)) == -1) { 
                     printf("Failed to send session ID to client %d. Returning to menu\n", cfd);
                     break;  // Exit this case, client will disconnect
                 }
-                // Host is in session, and on their end they are in the chat loop
+
                 // Find assigned session
                 Session* hostSession;
                 for (int i = 0; i < MAXSESSIONS; i++) {
                     if (sessionList[i].sessionId == newSession) {
                         hostSession = &sessionList[i];
+                        clientCleanupData.session = hostSession;  // For cleanup info
                         break;
                     }
                 }
+
+                // Chat loop
                 chatRelay(cfd, hostSession);
+
                 // Remove this guy from the session, also check if session is now empty
                 leaveSession(cfd, hostSession);
-
+                clientCleanupData.session = NULL;
                 break;
             }
             case 2: { 
@@ -254,20 +282,27 @@ void* clientHandler(void* args)
                 if (recvAll(cfd, &joinSession_net, sizeof(int32_t)) <= 0) {
                     printf("Failed to receive session ID from client %d\n", cfd);
                     break;
-                }                
+                }       
+
                 int32_t sessionId = ntohl(joinSession_net);  // Convert from network order
+
                 // Confirm valid sessionID 
                 int valid = validateSession(sessionId, sessionList);
                 if (sendAll(cfd, &valid, sizeof(int)) == -1) {
                     printf("Failed to send session validation code for %d\n", cfd);
                     break;  
                 }
+
                 // Add to session
                 Session* clientSession = addToSession(cfd, sessionList, sessionId);
+                clientCleanupData.session = clientSession;  
+
                 // Chat loop
                 chatRelay(cfd, clientSession);
+
                 // Remove this guy from the session, also check if session is now empty
                 leaveSession(cfd, clientSession);
+                clientCleanupData.session = NULL;
                 break;
             }
             case 3: { 
@@ -277,8 +312,7 @@ void* clientHandler(void* args)
         }
     }
 
-    close(cfd);
-    clientConnections--;
+    pthread_cleanup_pop(1); 
     return NULL;
 }
 

@@ -9,6 +9,8 @@
 #define BACKLOG 20 // pending connections for listen queue
 
 
+
+
 typedef struct {
     int32_t sessionId;
     //int sfdArray[MAXCLIENTS];
@@ -22,4 +24,9 @@ typedef struct {
 struct ThreadArgs {
     int* client_fd;
     Session* sessions;
+};
+
+struct clientData {
+    int cfd;
+    Session* session;
 };

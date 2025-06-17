@@ -8,3 +8,5 @@ typedef enum {
     STATE_JOINING,
     STATE_QUIT
 } ClientState;
+
+
