@@ -16,25 +16,10 @@
 
 #include <poll.h>
 
-#define WHISP_ONION "bz5yr2xruyrp3hcfkcefaatool4r7jqpynpxvl5nvliqqkkac7d3x5yd.onion" // Hardcode for now. Not ideal.
-#define PORT "8888" // localhost port
-#define MAXBYTES 256
+#include "utils.h"
+#include "client.h"
 
-typedef enum {
-    STATE_MENU,
-    STATE_HOSTING,
-    STATE_JOINING,
-    STATE_QUIT
-} ClientState;
 
-// get sockaddr, v4/v6 - Taken from Beej
-void *getInAddress(struct sockaddr *sa)
-{
-    if(sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
 
 // Function needed to get through tor - SOCKS5 proxy
 int socks5Connect(int sockfd, const char * addr, const char * port) 
@@ -55,15 +40,15 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
     */
     char authMsg[3] = {0x05, 0x01, 0x00}; // Sock5, 1 method, no auth
     printf("Sending authMsg\n");
-    if (send(sockfd, authMsg, 3, 0) != 3) {
+    if (sendAll(sockfd, authMsg, 3) == -1) {
         perror("client: authMsg");
         return -1;
     }
 
     char authResp[2];
-    if (recv(sockfd, authResp, 2, 0) != 2){
+    if (recvAll(sockfd, authResp, 2) != 2){
         return -1;
-    }  
+    }
 
     /*
         The SOCKS request is formed as follows:
@@ -116,7 +101,7 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
     // }
     int reqMsgLength = 5 + addrLength + 2;
     printf("Sending reqMsg\n");
-    if (send(sockfd, reqMsg, reqMsgLength, 0) != reqMsgLength) {
+    if (sendAll(sockfd, reqMsg, reqMsgLength) != reqMsgLength) {
         perror("client: reqMsg");
         return -1;
     }
@@ -163,7 +148,7 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
     
     */
     char reqResp[256];
-    if(recv(sockfd, reqResp, 10, 0)< 10) {
+    if(recvAll(sockfd, reqResp, 10) < 10) {
         return -1;
     }
     // Ensure we've succeded
@@ -174,6 +159,7 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
 
     return 0;
 }
+
 
 
 ClientState handleMenu(int sockfd)
@@ -196,17 +182,17 @@ ClientState handleMenu(int sockfd)
             return STATE_QUIT; 
         }
 
+        // Unexpected server data
         if (pfds[0].revents & (POLLERR | POLLHUP | POLLNVAL)) {
-            printf("\nLost connection to server – exiting.\n");
+            printf("\nLost connection to server\n");
             return STATE_QUIT;
         }
-        
         if (pfds[0].revents & POLLIN) {
             char buf[MAXBYTES];
             int n = recv(sockfd, buf, sizeof buf, 0);
         
-            if (n == 0) {                      /* orderly FIN → EOF */
-                printf("\nServer closed the connection.\n");
+            if (n == 0) {                    
+                printf("\nServer closed the connection\n");
                 return STATE_QUIT;
             }
             if (n < 0) {
@@ -214,24 +200,18 @@ ClientState handleMenu(int sockfd)
                 return STATE_QUIT;
             }
         
-            /* check for graceful-shutdown token */
-            if (strcmp(buf, "SERVER_GOING_AWAY") == 0) {
-                printf("\nServer is shutting down – goodbye.\n");
+            if (strcmp(buf, "SERVER_SHUTDOWN") == 0) {
+                printf("\nServer is shutting down\n");
                 return STATE_QUIT;
             }
-        
-            /* chatLoop: print message
-               handleMenu: (unlikely) ignore or handle menu-time notifications */
         }
 
-
+        // Keyboard input
         if (pfds[1].revents & POLLIN) {
-
             if (fgets(line, sizeof(line), stdin) != NULL) {
                 choice = atoi(line);
                 memset(line, 0, sizeof(line));
                 switch(choice) {
-                    // int optionByte = recv(cfd, &option, 1, 0);
                     case 1: 
                         // HOST
                         send(sockfd, &choice, 1, 0);
@@ -296,7 +276,7 @@ void chatLoop(int sockfd) {
             // Message (maybe)
             memset(networkBuf, 0, sizeof(networkBuf)); 
 
-            int numbytes = recv(sockfd, &networkBuf, sizeof(networkBuf), 0);
+            int numbytes = recv(sockfd, networkBuf, sizeof(networkBuf), 0);
             if (numbytes <= 0) {
                 printf("Server error. Disconnecting\n");
                 break;
@@ -320,7 +300,7 @@ void chatLoop(int sockfd) {
 
 
                 // Send message
-                send(sockfd, input, strlen(input) + 1, 0); // Including null here
+                sendAll(sockfd, input, strlen(input) + 1);
                 if (strcmp(input, "EXIT") == 0) break;
 
             }
@@ -331,7 +311,7 @@ void chatLoop(int sockfd) {
 ClientState handleHost(int sockfd) {
     // Get sessionID from server thread, it already knows you selected host
     int32_t newSession_net;
-    int numbytes = recv(sockfd, &newSession_net, sizeof(int32_t), 0);
+    int numbytes = recvAll(sockfd, &newSession_net, sizeof(int32_t));
     if (numbytes != sizeof(int32_t)) {
         perror("Failed to receive session ID");
         return STATE_MENU;
@@ -353,12 +333,12 @@ ClientState handleJoin(int sockfd) {
     if (fgets(line, sizeof(line), stdin) != NULL) {
         int32_t sessionID = atoi(line);
         int32_t netSessionID = htonl(sessionID);  // Convert to network order
-        send(sockfd, &netSessionID, sizeof(int32_t), 0);
+        sendAll(sockfd, &netSessionID, sizeof(int32_t));
         // Get response from server, verify
         printf("Waiting for server confirmation...\n");
     
         int confirm;
-        recv(sockfd, &confirm, sizeof(int), 0);
+        recvAll(sockfd, &confirm, sizeof(int));
         if (confirm == 1) {
             // Joined session
             // Chat Loop

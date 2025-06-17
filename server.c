@@ -20,39 +20,13 @@
 
 #include <poll.h>
 
+#include "utils.h"
 
 
 int clientConnections = 0;
 static Session* g_sessions = NULL; // Used for server failure
 
 
-int sendAll(int sock, void* buf, int len) {
-    char* dataBuf = (char*)buf;
-    int sentBytes = 0; // Bytes sent
-    int numBytes;
-    
-    while(sentBytes < len) {
-        numBytes = send(sock, dataBuf + sentBytes, len - sentBytes, 0);
-        if (numBytes <= 0) {break;} // Problem with send()
-        sentBytes += numBytes;
-    }
-
-    return (numBytes <= 0 ? -1 : sentBytes); // -1 on fail
-}
-
-int recvAll(int sock, void* buf, int len) {
-    char* dataBuf = (char*)buf;
-    int recvBytes = 0; // Bytes sent
-    int numBytes;
-    
-    while(recvBytes < len) {
-        numBytes = recv(sock, dataBuf + recvBytes, len - recvBytes, 0);
-        if (numBytes <= 0) {break;} // Problem with send()
-        recvBytes += numBytes;
-    }
-
-    return (numBytes <= 0 ? -1 : recvBytes); // -1 on fail
-}
 
 static void sigintHandler()
 {
@@ -72,14 +46,7 @@ static void sigintHandler()
     _exit(0); // Special kernel exit
 }
 
-// get sockaddr, v4/v6 - Taken from Beej
-void *getInAddress(struct sockaddr *sa)
-{
-    if(sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
+
 
 
 int findSessionIndex(int cfd, Session* session) {
