@@ -3,17 +3,13 @@
 #include <sys/poll.h>
 #include <unistd.h>
 #include <string.h>
-
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
-
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-
 #include <pthread.h>
-
 #include <poll.h>
 
 #include "utils.h"
@@ -49,7 +45,7 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
         appear in the METHODS field.
     */
     char authMsg[3] = {0x05, 0x01, 0x00}; // Sock5, 1 method, no auth
-    printf("Sending authMsg\n");
+    //printf("Sending authMsg\n");
     if (sendAll(sockfd, authMsg, 3) == -1) {
         perror("client: authMsg");
         return -1;
@@ -110,7 +106,7 @@ int socks5Connect(int sockfd, const char * addr, const char * port)
     //     printf("%c",reqMsg[i]);
     // }
     int reqMsgLength = 5 + addrLength + 2;
-    printf("Sending reqMsg\n");
+    //printf("Sending reqMsg\n");
     if (sendAll(sockfd, reqMsg, reqMsgLength) != reqMsgLength) {
         perror("client: reqMsg");
         return -1;
@@ -233,7 +229,6 @@ ClientState handleMenu(int sockfd)
                     
                     case 2: 
                         // JOIN
-                        printf("Join selected");
                         send(sockfd, &choice, 1, 0);
                         return STATE_JOINING;
                         break;
@@ -265,7 +260,6 @@ int isAsciiMsg(const char* input) {
 
 MessageState validateMessage(const char* input) {
     size_t len = strlen(input);
-    printf("msg length: %zu\n",len);
     if (len == 0) return MSG_EMPTY;
 
     static time_t lastMessage = 0; // Persists in memory 
@@ -339,13 +333,11 @@ void chatLoop(int sockfd) {
             perror("poll");
             exit(1);
         }
-
         if (pfds[0].revents & POLLHUP) {
             // Hangup, shut it down
             printf("Hangup signal from server! Returning to menu\n");
             break;
         }
-
         if (pfds[0].revents & POLLIN) {
             // Message (maybe)
             memset(networkBuf, 0, sizeof(networkBuf)); 
@@ -362,11 +354,7 @@ void chatLoop(int sockfd) {
             ChatMessage msgData;
             unpackMessage(networkBuf, &msgData);
             printf("%s: %s\n",msgData.username, msgData.message);
-            
-
         }
-
-        
         if (pfds[1].revents & POLLIN) {
             // Client keyboard
             char input[256];
@@ -396,10 +384,13 @@ void chatLoop(int sockfd) {
                         break;
                     case MSG_VALID: {
                         // Pack username and color, then send
+                        if (strcmp(input, "EXIT") == 0) {
+                            sendAll(sockfd, "EXIT", 5);  // Send plain EXIT
+                            return;
+                        }
                         char msgBuffer[276];
                         serializeMessage(msgBuffer, username, DEFAULT_COLOR, input);
                         sendAll(sockfd, msgBuffer, strlen(msgBuffer) + 1);
-                        if (strcmp(input, "EXIT") == 0) return;
                     }
 
                 }
@@ -429,7 +420,7 @@ ClientState handleHost(int sockfd) {
 
 
 ClientState handleJoin(int sockfd) {
-    printf("Handling join\n");
+    //printf("Handling join\n");
     // Client sends sessionID to server whom is waiting
     char line[MAXBYTES];
     printf("Provide sessionID: ");
@@ -451,11 +442,10 @@ ClientState handleJoin(int sockfd) {
             // Session full
             printf("Session is full try again later\n");
         }
-    
-    } else {
-        printf("Invalid sessionID");
-    }
-   
+        else {
+            printf("Invalid sessionID\n");
+        }
+    } 
     return STATE_MENU;
 }
 
@@ -480,7 +470,6 @@ int main(void)
         return 1;
     }
 
-
     for (p = servinfo; p != NULL; p = p->ai_next) {
         if ((sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol)) == -1) {
             perror("client: socket");
@@ -488,7 +477,7 @@ int main(void)
         }
 
         inet_ntop(p->ai_family, getInAddress((struct sockaddr *)p->ai_addr),s, sizeof s);
-        printf("client: attemping connection to %s\n", s);
+        //printf("client: attemping connection to %s\n", s);
 
         if (connect(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             perror("client: connect to tor");
@@ -505,15 +494,12 @@ int main(void)
         break;
     }
 
-
-    
     if (p == NULL) {
         fprintf(stderr, "client: failed to connect\n");
         return 2;
     }
-
     inet_ntop(p->ai_family, getInAddress((struct sockaddr *)p->ai_addr),s, sizeof s);
-    printf("Client connected to %s\n", s);
+
 
     freeaddrinfo(servinfo); // drop the linked list, we have a connection
 
@@ -521,7 +507,7 @@ int main(void)
     printf("WELCOME TO WHISP\n");
     int valid = 0;
     while (!valid) {
-        printf("Set temporary username (optional - press ENTER to skip): ");
+        printf("Set username (ENTER to skip): ");
         fflush(stdout);
         
         if (fgets(username, sizeof(username), stdin) != NULL) {
@@ -545,7 +531,8 @@ int main(void)
             valid = 1;
         }
     }
-    
+    printf("Username set: %s\n", username);
+
     while(state != STATE_QUIT) {
         switch(state) {
             case STATE_MENU: 

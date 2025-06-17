@@ -1,27 +1,20 @@
-#include "server.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/poll.h>
 #include <unistd.h>
 #include <string.h>
-
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
-
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
-
 #include <pthread.h>
-
 #include <sodium.h>
-
 #include <poll.h>
 
 #include "utils.h"
-
+#include "server.h"
 
 
 int clientConnections = 0;
@@ -47,8 +40,6 @@ static void sigintHandler()
     }
     _exit(0); // Special kernel exit
 }
-
-
 
 
 int findSessionIndex(int cfd, Session* session) {
@@ -127,7 +118,6 @@ void chatRelay(int cfd, Session* session)
 
         if (mySocket.revents & POLLIN) {
             printf("Relaying message for client %d\n",cfd);
-
             memset(networkBuf, 0, sizeof(networkBuf)); 
             int numbytes = recv(cfd, &networkBuf, sizeof(networkBuf)-1, 0);
             if (numbytes <= 0) {
@@ -137,8 +127,8 @@ void chatRelay(int cfd, Session* session)
             networkBuf[numbytes] = '\0'; 
 
             printf("Client %d message: %s\n",cfd, networkBuf);
-            
             if (strcmp(networkBuf, "EXIT") == 0) { 
+                printf("Exiting\n");
                 break;
             } else {
                 // Relay message to other clients
@@ -151,6 +141,7 @@ void chatRelay(int cfd, Session* session)
                         }
                     }
                 }
+                sodium_memzero(networkBuf, sizeof(networkBuf));
                 pthread_mutex_unlock(&broadcast_mutex);
             }
         }   
@@ -159,28 +150,24 @@ void chatRelay(int cfd, Session* session)
 }
 
 
-
 int validateSession(int32_t sessionID, Session* sessionList) {
     pthread_mutex_lock(&sessions_mutex);
-
     for (int i = 0; i < MAXSESSIONS; i++) {
         if (sessionList[i].active && sessionList[i].sessionId == sessionID){
             if (sessionList[i].clientCount == MAXCLIENTS) {
                 pthread_mutex_unlock(&sessions_mutex);
-
                 return 2;
             }
             else {
                 pthread_mutex_unlock(&sessions_mutex);
-
                 return 1;
             }
         } 
-
     }
     pthread_mutex_unlock(&sessions_mutex);
     return 0;
 }
+
 
 Session* addToSession(int cfd, Session* sessionList, int32_t sessionID) 
 {
@@ -198,47 +185,37 @@ Session* addToSession(int cfd, Session* sessionList, int32_t sessionID)
     return NULL;
 }
 
+
 void leaveSession(int cfd, Session* session) {
     pthread_mutex_lock(&sessions_mutex);
-
     int cfdIndex = findSessionIndex(cfd, session);
-
     if (cfdIndex == -1) {
         printf("Error: Somehow client %d is not in session\n",cfd);
         pthread_mutex_unlock(&sessions_mutex);
         return;
     }
-
     // Remove user from session
     session->clientCount -= 1;
-
     // Start at leaving index, slide the rest down
     for (int j = cfdIndex; j < session->clientCount; ++j) {
         session->sessionPFDS[j] = session->sessionPFDS[j + 1];
     }
-
     session->sessionPFDS[session->clientCount].fd = -1; // Clear last slot
-
-
     // Wipe session if out of users (I NEED MUTEX LOCKS THIS COULD BE NASTY)
     if (session->clientCount == 0) {
+        printf("Wiping session %d\n", session->sessionId);
         session->active = 0;
         session->sessionId = -1;
     }
     pthread_mutex_unlock(&sessions_mutex);
-
 }
-
 
 
 void thread_cleanup(void* arg) {
     struct clientData* data = (struct clientData*)arg;
-    
     printf("Cleaning up thread for client %d\n", data->cfd);
     
-    if (data->session) {
-        leaveSession(data->cfd, data->session);
-    }
+    if (data->session) leaveSession(data->cfd, data->session);
     
     close(data->cfd);
     pthread_mutex_lock(&sessions_mutex);
@@ -259,12 +236,7 @@ void* clientHandler(void* args)
     // Cleanup handler
     struct clientData clientCleanupData = {.cfd = cfd, .session = NULL}; // I like this syntax
     pthread_cleanup_push(thread_cleanup, &clientCleanupData);
-
-
     printf("Connection on thread %i\n",cfd);
-
-
-
     // Get Option
     int option = 0;
     while(option != 3) {
@@ -318,12 +290,15 @@ void* clientHandler(void* args)
                 }       
 
                 int32_t sessionId = ntohl(joinSession_net);  // Convert from network order
-
                 // Confirm valid sessionID 
                 int valid = validateSession(sessionId, sessionList);
                 if (sendAll(cfd, &valid, sizeof(int)) == -1) {
                     printf("Failed to send session validation code for %d\n", cfd);
                     break;  
+                }
+                if (valid != 1) {
+                    printf("Client tried using invalid sessionID. Going back to menu\n");
+                    break;
                 }
 
                 // Add to session
@@ -344,12 +319,9 @@ void* clientHandler(void* args)
             }
         }
     }
-
     pthread_cleanup_pop(1); 
     return NULL;
 }
-
-
 
 
 int main(void)
@@ -411,17 +383,14 @@ int main(void)
         // Bind socket
         if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
             close(sockfd);
-
             perror("server: bind");
             continue;
         }
-
         break;
-
     }
+
     freeaddrinfo(servinfo); // No need for this anymore, we have our listen socket
 
-    
     if (p == NULL) {
         fprintf(stderr, "server: failed to bind\n");
         exit(1);
@@ -447,7 +416,6 @@ int main(void)
             continue;
         }
 
-
         inet_ntop(client_addr.ss_family, getInAddress((struct sockaddr *)&client_addr), s, sizeof(s));
         printf("Server: connection secured from %s\n", s);
 
@@ -458,7 +426,6 @@ int main(void)
         struct ThreadArgs* args = malloc(sizeof(struct ThreadArgs));
         args->client_fd = cSock;
         args->sessions = currentSessions;
-
 
         pthread_t cThread;
         pthread_mutex_lock(&sessions_mutex);
@@ -471,10 +438,10 @@ int main(void)
             free(cSock);
             close(newClient); 
             free(args);
+
             pthread_mutex_lock(&sessions_mutex);
             clientConnections--;
             pthread_mutex_unlock(&sessions_mutex);
-
             continue;
         }
         pthreadResult = pthread_detach(cThread);
@@ -484,4 +451,3 @@ int main(void)
     }
     return 0;
 }
-
