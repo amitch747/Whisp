@@ -31,7 +31,7 @@ pthread_mutex_t broadcast_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void sigintHandler()
 {
-    const char *bye = "SERVER_GOING_AWAY";
+    const char *bye = "SERVER_SHUTDOWN";
     for (int s = 0; s < MAXSESSIONS; ++s) {
         if (!g_sessions[s].active) continue;
 
@@ -128,11 +128,12 @@ void chatRelay(int cfd, Session* session)
             printf("Relaying message for client %d\n",cfd);
 
             memset(networkBuf, 0, sizeof(networkBuf)); 
-            int numbytes = recv(cfd, &networkBuf, sizeof(networkBuf), 0);
+            int numbytes = recv(cfd, &networkBuf, sizeof(networkBuf)-1, 0);
             if (numbytes <= 0) {
                 printf("Client %d disconnected\n", cfd);
                 break;
             }
+            networkBuf[numbytes] = '\0'; 
 
             printf("Client %d message: %s\n",cfd, networkBuf);
             
@@ -174,6 +175,7 @@ int validateSession(int32_t sessionID, Session* sessionList) {
                 return 1;
             }
         } 
+
     }
     pthread_mutex_unlock(&sessions_mutex);
     return 0;
@@ -260,6 +262,7 @@ void* clientHandler(void* args)
 
     printf("Connection on thread %i\n",cfd);
 
+    
 
     // Get Option
     int option = 0;
@@ -267,7 +270,7 @@ void* clientHandler(void* args)
         printf("Menu loop thread %i\n",cfd);
 
         if (recvAll(cfd, &option, 1) <= 0) {
-            printf("Client %d disconnected in menu\n", cfd);
+            printf("[%ld] Client %d disconnected\n", time(NULL), cfd);
             break;
         }
         

@@ -189,8 +189,8 @@ ClientState handleMenu(int sockfd)
         }
         if (pfds[0].revents & POLLIN) {
             char buf[MAXBYTES];
-            int n = recv(sockfd, buf, sizeof buf, 0);
-        
+            int n = recv(sockfd, buf, sizeof buf - 1, 0);  
+
             if (n == 0) {                    
                 printf("\nServer closed the connection\n");
                 return STATE_QUIT;
@@ -199,7 +199,10 @@ ClientState handleMenu(int sockfd)
                 perror("recv");
                 return STATE_QUIT;
             }
+
         
+            buf[n] = '\0';
+
             if (strcmp(buf, "SERVER_SHUTDOWN") == 0) {
                 printf("\nServer is shutting down\n");
                 return STATE_QUIT;
@@ -284,6 +287,8 @@ void unpackMessage(const char* buffer, ChatMessage* msgData) {
 
     if (username && strlen(username) > 0) {
         strncpy(msgData->username, username, sizeof(msgData->username));
+        msgData->username[sizeof(msgData->username)-1] = '\0';
+
     } else {
         strcpy(msgData->username, DEFAULT_NAME);
     }
@@ -298,6 +303,7 @@ void unpackMessage(const char* buffer, ChatMessage* msgData) {
     // Set message
     if (message) {
         strncpy(msgData->message, message, sizeof(msgData->message));
+        msgData->message[sizeof(msgData->message)-1] = '\0'; // I may be doing this too much, rework needed
     } else {
         msgData->message[0] = '\0';
     }
@@ -334,17 +340,19 @@ void chatLoop(int sockfd) {
             // Message (maybe)
             memset(networkBuf, 0, sizeof(networkBuf)); 
             
-            int numbytes = recv(sockfd, networkBuf, sizeof(networkBuf), 0);
-            ChatMessage msgData;
-            unpackMessage(networkBuf, &msgData);
+            int numbytes = recv(sockfd, networkBuf, sizeof(networkBuf)-1, 0);
+
             
             if (numbytes <= 0) {
                 printf("Server error. Disconnecting\n");
                 break;
             }
-            else {
-                printf("%s: %s\n",msgData.username, msgData.message);
-            }
+        
+            networkBuf[numbytes] = '\0'; 
+            ChatMessage msgData;
+            unpackMessage(networkBuf, &msgData);
+            printf("%s: %s\n",msgData.username, msgData.message);
+            
 
         }
 
@@ -501,13 +509,13 @@ int main(void)
     printf("WELCOME TO WHISP\n");
     int valid = 0;
     while (!valid) {
-        printf("Set username [11 chars] (optional - press ENTER to skip): ");
+        printf("Set temporary username (optional - press ENTER to skip): ");
         fflush(stdout);
         
         if (fgets(username, sizeof(username), stdin) != NULL) {
             if (strchr(username, '\n') == NULL) {
                 // Too long
-                printf("Username too long! Try again.\n");
+                printf("Username too long. Keep it under 12 characters\n");
                 int c;
                 while ((c = getchar()) != '\n' && c != EOF);
             } else {
