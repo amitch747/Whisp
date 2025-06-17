@@ -8,7 +8,9 @@
 - ~~Threadcleanup incase of failure during the chat loop~~
 
 - Input validation and enapsulation(framing) - Keep it similar to beej's example
-- Rate limiting ?
+
+- Rate limiting and security (linux is weird)
+
 - Fix naming conventions and clean up functions (lots of cleanup needed)
 - Put function declarations in .h
 - Message encryption

@@ -19,7 +19,7 @@
 #include "utils.h"
 #include "client.h"
 
-
+char username[12];
 
 // Function needed to get through tor - SOCKS5 proxy
 int socks5Connect(int sockfd, const char * addr, const char * port) 
@@ -267,7 +267,41 @@ MessageState validateMessage(const char* input) {
     return MSG_VALID;
 }
 
+void serializeMessage(char* buffer, const char* name, const char* color, const char* msg) {
+    snprintf(buffer, 276, "%s|%s|%s", 
+        name ? name : DEFAULT_NAME, color ? color : DEFAULT_COLOR, msg);
+    //printf("%s\n", buffer);
+}
 
+void unpackMessage(const char* buffer, ChatMessage* msgData) {
+    char temp[276];
+    strncpy(temp, buffer, sizeof(temp)-1);
+    temp[sizeof(temp)-1] = '\0';  // Manually null char just incase
+
+    char* username = strtok(temp, "|");
+    char* color = strtok(NULL, "|");
+    char* message = strtok(NULL, ""); 
+
+    if (username && strlen(username) > 0) {
+        strncpy(msgData->username, username, sizeof(msgData->username));
+    } else {
+        strcpy(msgData->username, DEFAULT_NAME);
+    }
+    
+    // Set color
+    if (color && strlen(color) == 7 && color[0] == '#') {
+        strncpy(msgData->color, color, sizeof(msgData->color));
+    } else {
+        strcpy(msgData->color, DEFAULT_COLOR);
+    }
+    
+    // Set message
+    if (message) {
+        strncpy(msgData->message, message, sizeof(msgData->message));
+    } else {
+        msgData->message[0] = '\0';
+    }
+}
 
 void chatLoop(int sockfd) {
     printf("Type EXIT to return to menu\n");
@@ -279,7 +313,7 @@ void chatLoop(int sockfd) {
     pfds[1].events = POLLIN;
 
 
-    char networkBuf[256];
+    char networkBuf[276];
     // Chat loop
     for(;;) {
         //printf("Chatloop\n");
@@ -299,14 +333,17 @@ void chatLoop(int sockfd) {
         if (pfds[0].revents & POLLIN) {
             // Message (maybe)
             memset(networkBuf, 0, sizeof(networkBuf)); 
-
+            
             int numbytes = recv(sockfd, networkBuf, sizeof(networkBuf), 0);
+            ChatMessage msgData;
+            unpackMessage(networkBuf, &msgData);
+            
             if (numbytes <= 0) {
                 printf("Server error. Disconnecting\n");
                 break;
             }
             else {
-                printf("????: %s\n", networkBuf);
+                printf("%s: %s\n",msgData.username, msgData.message);
             }
 
         }
@@ -339,15 +376,18 @@ void chatLoop(int sockfd) {
                     case MSG_INVALID:
                         printf("Invalid ASCII characters\n");
                         break;
-                    case MSG_VALID: 
-                        // Send message
-                        sendAll(sockfd, input, strlen(input) + 1);
+                    case MSG_VALID: {
+                        // Pack username and color, then send
+                        char msgBuffer[276];
+                        serializeMessage(msgBuffer, username, DEFAULT_COLOR, input);
+                        sendAll(sockfd, msgBuffer, strlen(msgBuffer) + 1);
                         if (strcmp(input, "EXIT") == 0) return;
+                    }
+
                 }
             }
         }
     }
-    
 }
 
 
@@ -459,6 +499,33 @@ int main(void)
 
 
     printf("WELCOME TO WHISP\n");
+    int valid = 0;
+    while (!valid) {
+        printf("Set username [11 chars] (optional - press ENTER to skip): ");
+        fflush(stdout);
+        
+        if (fgets(username, sizeof(username), stdin) != NULL) {
+            if (strchr(username, '\n') == NULL) {
+                // Too long
+                printf("Username too long! Try again.\n");
+                int c;
+                while ((c = getchar()) != '\n' && c != EOF);
+            } else {
+                // Good size
+                username[strcspn(username, "\n")] = '\0';
+                valid = 1;  // Input is valid
+                
+                if (strlen(username) == 0) {
+                    strcpy(username, DEFAULT_NAME);
+                }
+            }
+        } else {
+            // Just incase
+            strcpy(username, DEFAULT_NAME);
+            valid = 1;
+        }
+    }
+    
     while(state != STATE_QUIT) {
         switch(state) {
             case STATE_MENU: 

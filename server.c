@@ -98,7 +98,7 @@ int32_t createSession(int cfd, Session* sessionList)
 void chatRelay(int cfd, Session* session) 
 {
     // Assume that the session's sessionPFDS array is already set
-    char networkBuf[256];
+    char networkBuf[280];
     memset(networkBuf, 0, sizeof(networkBuf)); 
 
     struct pollfd mySocket;
@@ -135,7 +135,7 @@ void chatRelay(int cfd, Session* session)
             }
 
             printf("Client %d message: %s\n",cfd, networkBuf);
-
+            
             if (strcmp(networkBuf, "EXIT") == 0) { 
                 break;
             } else {
