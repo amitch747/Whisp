@@ -1,6 +1,8 @@
 # Whisp - Private group chat for linux (and WSL)
 A lightweight, self-hosted chat server that uses Tor onion routing for anonymous communication.
 
+![alt text](Whisp.gif)
+
 ## Architecture:
 Client -> Tor SOCKS5 -> Hidden Service -> Whisp Server -> Hidden Service -> Tor SOCKS5 -> Client
 
@@ -40,7 +42,7 @@ Client -> Tor SOCKS5 -> Hidden Service -> Whisp Server -> Hidden Service -> Tor 
     sudo apt install tor
 2. **Run Tor:**
     ```bash
-    sudo systemctl start tor
+    sudo tor
 2. **Create .env with the onion address** 
    ```bash
    echo "WHISP_ONION=your_friends_address.onion" > .env
